@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src-tauri/icons/128x128@2x.png" width="128" height="128" alt="DocBox logo: a gold two-compartment box on a black tile">
+  <img src="src-tauri/icons/128x128@2x.png" width="128" height="128" alt="DocBox logo: a blue two-shelf box on a white tile">
 </p>
 
 <h1 align="center">DocBox</h1>

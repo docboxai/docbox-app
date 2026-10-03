@@ -31,6 +31,12 @@ fn ensure_uv_sidecar() {
 }
 
 fn main() {
+    // Declaring any rerun-if-changed (as ensure_uv_sidecar does) turns off cargo's
+    // default of rerunning on every change, so list the inputs tauri_build embeds too —
+    // otherwise an icon-only change keeps the old window/taskbar icon.
+    println!("cargo:rerun-if-changed=icons");
+    println!("cargo:rerun-if-changed=tauri.conf.json");
+    println!("cargo:rerun-if-changed=capabilities");
     ensure_uv_sidecar();
     tauri_build::build()
 }
