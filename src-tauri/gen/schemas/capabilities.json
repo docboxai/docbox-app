@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Main window: core APIs plus checking for and installing app updates.","local":true,"windows":["main"],"permissions":["core:default","updater:default","process:allow-restart"]}}

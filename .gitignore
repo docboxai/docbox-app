@@ -1,0 +1,27 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+src/docbox.egg-info/
+src/docbox.dist-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+
+# Rust / Tauri
+src-tauri/target/
+# uv sidecar: copied from PATH by build.rs locally, downloaded (pinned) in release CI
+src-tauri/binaries/
+
+# Logs
+logs/
+*.log
+
+# Claude Code local session state
+.claude/
+
+# TypeScript incremental build cache
+*.tsbuildinfo

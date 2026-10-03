@@ -1,0 +1,67 @@
+@import "@fontsource-variable/plus-jakarta-sans";
+@import "@fontsource/ibm-plex-mono/500.css";
+@import "@fontsource/ibm-plex-mono/700.css";
+@import "tailwindcss";
+
+/* Y2K poster palette: white ground, layered cobalt blues, black ink, one hot-pink tag.
+   `accent` is the darker cobalt so blue text and white-on-blue buttons stay readable;
+   `accent-bright` is for decorative shapes only. */
+@theme {
+  --color-bg: #ffffff;
+  --color-panel: #ffffff;
+  --color-panel-2: #f3f7fd;
+  --color-border: #d6e3f5;
+  --color-text: #0b0b0c;
+  --color-text-muted: #4f5866;
+  --color-ink: #0b0b0c;
+  --color-accent: #1f63c6;
+  --color-accent-bright: #2f7de1;
+  --color-accent-light: #afcdf4;
+  --color-accent-pale: #e3eefc;
+  --color-pink: #ff2e7e;
+  --color-warn: #a3134f;
+  --color-warn-bg: #fff0f5;
+  --font-sans: "Plus Jakarta Sans Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: var(--color-border);
+  border-radius: 999px;
+}
+
+/* Poster motifs, used decoratively (always aria-hidden). */
+.halftone {
+  background-image: radial-gradient(circle, var(--color-accent-bright) 1.3px, transparent 1.6px);
+  background-size: 9px 9px;
+}
+
+.skyline-light {
+  clip-path: polygon(0 40%, 20% 40%, 20% 0, 46% 0, 46% 25%, 70% 25%, 70% 10%, 100% 10%, 100% 100%, 0 100%);
+}
+
+.skyline-dark {
+  clip-path: polygon(0 30%, 40% 30%, 40% 0, 100% 0, 100% 100%, 0 100%);
+}
