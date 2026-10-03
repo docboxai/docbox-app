@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1024" height="1024">
+  <!-- Concept E: an open box seen from above (app-tile shape, thick black side),
+       with a bold white "D" lying inside, tilted with the box's perspective. -->
+  <defs>
+    <clipPath id="tile"><rect x="32" y="32" width="448" height="424" rx="110"/></clipPath>
+  </defs>
+  <rect x="32" y="60" width="448" height="424" rx="110" fill="#0B0B0C"/>
+  <g clip-path="url(#tile)">
+    <polygon points="32,32 480,32 356,144 156,144" fill="#7FB2F4"/>
+    <polygon points="32,32 156,144 156,344 32,456" fill="#2F7DE1"/>
+    <polygon points="480,32 480,456 356,344 356,144" fill="#1F63C6"/>
+    <polygon points="32,456 156,344 356,344 480,456" fill="#4A93ED"/>
+    <rect x="156" y="144" width="200" height="200" fill="#174C9C"/>
+  </g>
+  <g transform="translate(262 252) rotate(-18) skewX(-10) translate(-64 -70)">
+    <path d="M0 0 H58 C104 0 128 30 128 70 C128 110 104 140 58 140 H0 Z M36 30 V110 H56 C80 110 92 94 92 70 C92 46 80 30 56 30 Z"
+          fill="#0B0B0C" fill-opacity="0.4" fill-rule="evenodd" transform="translate(8 10)"/>
+    <path d="M0 0 H58 C104 0 128 30 128 70 C128 110 104 140 58 140 H0 Z M36 30 V110 H56 C80 110 92 94 92 70 C92 46 80 30 56 30 Z"
+          fill="#FFFFFF" fill-rule="evenodd"/>
+  </g>
+  <rect x="376" y="344" width="64" height="64" rx="10" fill="#FF2E7E" stroke="#FFFFFF" stroke-width="10"/>
+</svg>

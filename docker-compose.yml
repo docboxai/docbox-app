@@ -1,0 +1,70 @@
+services:
+  # The orchestrator: reached by clients (the frontend, curl, etc.) at :8756. Its
+  # /api/models and /api/ocr/run stay engine-agnostic: it delegates PaddleOCR,
+  # PaddleOCR-VL, Tesseract and EasyOCR work to the dedicated containers below over
+  # HTTP (see remote_engine.py) instead of running those engines itself, so this image
+  # carries none of their packages.
+  backend:
+    build: .
+    ports:
+      # Loopback only: the API has no auth and can set/clear the stored NVIDIA key, so
+      # publishing it on every interface would hand that to anyone on the LAN.
+      - "127.0.0.1:8756:8756"
+    environment:
+      - DOCBOX_PADDLEOCR_URL=http://paddleocr:8756
+      - DOCBOX_PADDLEOCR_VL_URL=http://paddleocr-vl:8756
+      - DOCBOX_TESSERACT_URL=http://tesseract:8756
+      - DOCBOX_EASYOCR_URL=http://easyocr:8756
+      # 127.0.0.1 inside this container is the container itself, not the host running
+      # Ollama — host.docker.internal is Docker's DNS name for the host machine.
+      # Docker Desktop (Windows/Mac) resolves it out of the box; extra_hosts below is
+      # what makes it resolve on Linux too. Ollama itself must also be told to listen
+      # on more than loopback (see README) for this to actually reach it.
+      - DOCBOX_OLLAMA_BASE_URL=http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - paddleocr
+      - paddleocr-vl
+      - tesseract
+      - easyocr
+
+  # One container per OCR engine family, each built with only its own engine's packages
+  # (UV_EXTRAS) and only ever asked, by the orchestrator via the URLs above, to serve
+  # models for its own engine. Separate containers so each can be restarted, scaled or
+  # OOM-killed on its own: a crash in the heavy PaddleOCR-VL pipeline doesn't take down
+  # Tesseract or the API.
+  paddleocr:
+    build:
+      context: .
+      args:
+        UV_EXTRAS: "--extra paddle"
+    volumes:
+      - paddleocr-models:/data
+
+  paddleocr-vl:
+    build:
+      context: .
+      args:
+        UV_EXTRAS: "--extra paddle"
+    volumes:
+      - paddleocr-vl-models:/data
+
+  tesseract:
+    build: .
+    volumes:
+      - tesseract-models:/data
+
+  easyocr:
+    build:
+      context: .
+      args:
+        UV_EXTRAS: "--extra easyocr"
+    volumes:
+      - easyocr-models:/data
+
+volumes:
+  paddleocr-models:
+  paddleocr-vl-models:
+  tesseract-models:
+  easyocr-models:

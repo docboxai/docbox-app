@@ -1,0 +1,116 @@
+name: Release
+
+# Push a tag like v0.2.0 (matching the version in tauri.conf.json, pyproject.toml and
+# src-tauri/Cargo.toml) to build installers and publish them as a *draft* GitHub
+# Release. Review the draft, then publish it: that's what existing installs' updater
+# sees. MSI needs a plain x.y.z version (no "-rc1" suffixes).
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  # The uv bundled into the app as its Python/env manager. Bump deliberately.
+  UV_VERSION: "0.12.3"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            uv_asset: uv-x86_64-pc-windows-msvc.zip
+            sidecar: uv-x86_64-pc-windows-msvc.exe
+          - os: ubuntu-22.04
+            # The static musl build, so the AppImage's uv runs on any distro; Tauri
+            # names sidecars by the app's own target triple (gnu).
+            uv_asset: uv-x86_64-unknown-linux-musl.tar.gz
+            sidecar: uv-x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the tag matches every version field
+        shell: bash
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          conf=$(python -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+          py=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          cargo=$(python -c "import tomllib;print(tomllib.load(open('src-tauri/Cargo.toml','rb'))['package']['version'])")
+          echo "tag=$tag tauri=$conf pyproject=$py cargo=$cargo"
+          [ "$tag" = "$conf" ] && [ "$tag" = "$py" ] && [ "$tag" = "$cargo" ] || {
+            echo "::error::Version mismatch: bump all three to $tag before tagging"; exit 1; }
+
+      - name: Fetch the pinned uv sidecar (checksum-verified)
+        shell: bash
+        run: |
+          base="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
+          curl -fsSLO "$base/${{ matrix.uv_asset }}"
+          curl -fsSLO "$base/${{ matrix.uv_asset }}.sha256"
+          sha256sum -c "${{ matrix.uv_asset }}.sha256"
+          mkdir -p src-tauri/binaries uv-unpacked
+          python - <<'EOF'
+          import pathlib, shutil, tarfile, zipfile
+          asset = "${{ matrix.uv_asset }}"
+          if asset.endswith(".zip"):
+              zipfile.ZipFile(asset).extractall("uv-unpacked")
+          else:
+              tarfile.open(asset).extractall("uv-unpacked")
+          name = "uv.exe" if asset.endswith(".zip") else "uv"
+          found = next(pathlib.Path("uv-unpacked").rglob(name))
+          dest = pathlib.Path("src-tauri/binaries/${{ matrix.sidecar }}")
+          shutil.copy2(found, dest)
+          dest.chmod(0o755)
+          print("sidecar:", dest)
+          EOF
+
+      - name: Point the updater at this repository's releases
+        shell: bash
+        run: sed -i "s#OWNER/REPO#${GITHUB_REPOSITORY}#" src-tauri/tauri.conf.json
+
+      - name: Tauri system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev \
+            libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --prefix frontend
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: cargo-bins/cargo-binstall@main
+      - run: cargo binstall tauri-cli@^2 --no-confirm
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tauriScript: cargo tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: DocBox ${{ github.ref_name }}
+          releaseBody: |
+            **Windows:** download the `.exe` (or `.msi`) and run it. Windows SmartScreen may
+            warn about an unrecognized app because the installer isn't code-signed yet:
+            choose "More info" then "Run anyway".
+            **Linux:** download the `.AppImage`, `chmod +x` it and run it, or install the `.deb`.
+            The first launch sets up DocBox's own Python runtime (a minute or two, needs internet).
+          releaseDraft: true
+          prerelease: false
+          includeUpdaterJson: true

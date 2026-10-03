@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+frontend/
+src-tauri/
+tests/
+.git/
+.claude/
+*.md

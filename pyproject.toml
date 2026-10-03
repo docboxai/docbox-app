@@ -1,0 +1,71 @@
+[project]
+name = "docbox"
+version = "0.1.0"
+description = "Local, hassle-free OCR — set up and run open-source OCR models on your own machine"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+# Base install only: the API server and the light, pure-Python bits. Each engine family's
+# heavy packages are an extra below, installed on demand by `core/runtime.py` the first
+# time a user picks a model from that engine (or up front with `uv sync --all-extras`).
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pillow>=10.4",
+    "pypdfium2>=4.30",
+    "psutil>=6.0",
+    "platformdirs>=4.2",
+    "python-multipart>=0.0.9",
+    "pytesseract>=0.3.13",
+    "requests>=2.31",
+    "packaging>=23",
+]
+
+[project.optional-dependencies]
+paddle = ["paddleocr>=2.9", "paddlepaddle>=2.6"]
+# torch/torchvision are listed directly so [tool.uv.sources] can pin them to the CPU-only
+# index (sources only apply to direct dependencies); PyPI's Linux torch wheel bundles CUDA
+# and is several times larger.
+easyocr = ["easyocr>=1.7", "torch>=2.2", "torchvision>=0.17", "opencv-contrib-python"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+# easyocr wants opencv-python-headless, paddlex wants opencv-contrib-python, and both
+# install the same `cv2` package: installing one engine overwrote the other's files and
+# uninstalling it deleted them, breaking the engine left behind. Every engine shares the
+# contrib build instead (a superset; listed in the easyocr extra for EasyOCR-only installs).
+override-dependencies = ["opencv-python-headless; sys_platform == 'never'"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's parameter declarations are evaluated once by design.
+extend-immutable-calls = ["fastapi.File", "fastapi.Form", "fastapi.Query", "fastapi.Depends"]
