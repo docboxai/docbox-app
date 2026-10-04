@@ -173,6 +173,7 @@ registry.register(
         approx_ram_mb=6000,
         min_disk_mb=4000,
         engine_factory=lambda: PaddleOcrVlEngine(model_id="paddleocr-vl"),
+        slow_on_cpu=True,
     )
 )
 

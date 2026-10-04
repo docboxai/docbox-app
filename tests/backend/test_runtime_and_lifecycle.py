@@ -239,6 +239,7 @@ def test_prerequisites_endpoint_shape(client) -> None:
 def test_engine_storage_endpoint(client, data_dir) -> None:
     body = client.get("/api/engines/storage").json()
     assert body["data_dir"] == str(data_dir)
+    assert body["models_bytes"] == 0  # fresh data dir
     ids = {e["id"] for e in body["engines"]}
     assert ids == set(runtime.EXTRAS)
 

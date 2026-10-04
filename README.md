@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src-tauri/icons/128x128@2x.png" width="128" height="128" alt="DocBox logo: a blue two-shelf box on a white tile">
+  <img src="src-tauri/icons/128x128@2x.png" width="128" height="128" alt="DocBox logo: a white document box on a purple tile">
 </p>
 
 <h1 align="center">DocBox</h1>
@@ -43,6 +43,7 @@ computer unless you choose the optional NVIDIA cloud engine.
 - [Development](#development)
 - [Releasing](#releasing)
 - [Running the backend in Docker](#running-the-backend-in-docker)
+- [License](#license)
 
 ## Install
 
@@ -77,20 +78,25 @@ After that, DocBox opens in a second or two.
 DocBox opens on **Setup**. The **Recommended start** card is the best first choice for
 most people: *PaddleOCR Mobile — English*, which is small, fast and works on any computer.
 
-Click **Download**. That one click does everything: the first time you use an engine,
+Click **Install**. That one click does everything: the first time you use an engine,
 DocBox also installs its software, then downloads the model. You'll see a single progress
-bar for the whole job.
+bar for the whole job, and you can **pause** it and pick it up again later.
 
 ![One click: installing the engine and downloading the model](docs/screenshots/03-one-click-setup.png)
 
-When it's done, the PaddleOCR card shows a blue tick and **Ready**.
+When it's done, the card says **Installed** and offers **Read a file**.
 
 ### 3. Read a file
 
-Go to **Read a file**, drop an image or PDF onto the box (or click **Choose a file**),
-pick a model, and click **Read text**. For a PDF, choose the page to read.
+Go to **Read a file** and drop images or PDFs onto the box, click **Choose files**, or
+**Paste from clipboard** (Ctrl+V works too). Pick a model and how to save the text:
+**Plain text**, **Markdown**, a **Searchable PDF** (your scan with selectable text) or
+**JSON**. Then click **Read text**. DocBox reads every page, one file at a time, and saves
+the result to a `DocBox` folder in your Documents.
 
-Each line of text appears with a confidence bar. Click **Copy** to copy it all.
+Finished files appear under **Recent files**. Click one to see each line with a
+confidence bar, copy the text, or open the saved file. The model you mark as
+**Use as default** (on **Models**) is picked first.
 
 ![Reading a receipt: each line with its confidence](docs/screenshots/05-read-a-file.png)
 
@@ -100,9 +106,9 @@ Click any engine card on **Setup** to see what it's good for, a **Which one do I
 tip, and all its versions. Each version shows its size and whether it fits your
 computer. The button always tells you what a click will do:
 
-- **Download**: just the model files.
-- **Install engine + download**: the first time you use that engine.
-- **Set up Ollama first** / **Set up Tesseract first**: it needs a helper program (see step 5).
+- **Install**: just the model files.
+- **Install engine + model**: the first time you use that engine.
+- **Needs Ollama** / **Needs Tesseract**: it needs a helper program (see step 5).
 
 ![An engine's page: versions, sizes and advice](docs/screenshots/04-engine-detail.png)
 
@@ -119,7 +125,8 @@ one's status and how to set it up.
   (Linux) setup. DocBox then downloads its language files itself.
 - **NVIDIA NIM** runs models in NVIDIA's cloud using your own API key (get one at
   [build.nvidia.com](https://build.nvidia.com)). It's the only option that sends images
-  off your computer, and it's clearly labelled as such.
+  off your computer, so it only works while the **Cloud engine** switch (top right) is on.
+  Switch it off and NVIDIA's models disappear until you switch it back.
 
 Press **Check again** after installing anything.
 
@@ -135,14 +142,14 @@ anything is deleted.
 
 ![Removing a model asks first](docs/screenshots/08-remove-model.png)
 
-The **Storage** panel at the bottom of **Setup** shows how much space each engine and its
-models use. **Uninstall** removes an engine and all of its models. If you used that engine
+**Models** shows how much space your models use, and **Engines on disk** at the bottom
+lists each engine and its models. **Uninstall** removes an engine and all of its models. If you used that engine
 in this session, the removal finishes the next time DocBox starts.
 
 ![Storage: space used per engine](docs/screenshots/09-storage.png)
 
-**This device** shows the memory, processor and free disk DocBox uses to decide which
-models will run comfortably.
+**This device** shows the memory, processor, free disk and graphics card DocBox uses to
+decide which models will run comfortably.
 
 ![This device: memory, processor and disk](docs/screenshots/07-this-device.png)
 
@@ -174,15 +181,18 @@ Bulgarian), Arabic, Devanagari (Hindi, Marathi) and Korean.
 - **Ollama says "isn't running":** start the Ollama app, or click **Start Ollama** in
   **Connections**, then **Check again**.
 - **Where's my data?** In `%LOCALAPPDATA%\com.docbox.app` on Windows or
-  `~/.local/share/com.docbox.app` on Linux. The Storage panel shows it too. To remove
+  `~/.local/share/com.docbox.app` on Linux; **Engines on disk** on the Models page shows it
+too. Read history (the text of files you've read) is in its `history` folder; saved
+results are in `Documents/DocBox`. To remove
   everything after uninstalling the app, delete that folder.
 
 ## Privacy
 
 DocBox has no account, no telemetry and no analytics. OCR runs on your computer. The
 only network traffic is downloading DocBox's runtime, engines and models (from PyPI,
-the model publishers and GitHub), the update check on GitHub Releases, and, only if you
-connect it, sending images to NVIDIA's cloud.
+the model publishers and GitHub), the update check on GitHub Releases, and, only while
+the cloud engine is switched on and connected, sending images to NVIDIA's cloud. The text
+of files you read is kept on this computer (Recent files) until you remove it there.
 
 ---
 
@@ -224,14 +234,18 @@ A plain `uv sync` removes extras you didn't pass, so always pass the ones you wa
 
 - Backend only: `uv run python -m docbox.backend.main --port 8756`, then
   `http://127.0.0.1:8756/docs`.
-- Frontend only: `npm --prefix frontend run dev` (uses `http://127.0.0.1:8756` outside Tauri).
+- Frontend only: `npm --prefix frontend run dev`. In a plain browser the app calls `/api` on
+  its own origin and Vite proxies it to `http://127.0.0.1:8756` (set `DOCBOX_BACKEND_URL`
+  to point elsewhere), so it also works behind a reverse proxy or from another device.
 - Tests and lint: `uv run pytest`, `uv run ruff check src/docbox tests`.
 - Local installer: `cd src-tauri && cargo tauri build`. `build.rs` copies your own `uv` in
   as the sidecar when `src-tauri/binaries/` is empty. Updater artifacts need the signing
   key in `TAURI_SIGNING_PRIVATE_KEY`.
 
-The logo's source is `src-tauri/icons/logo.svg`; regenerate the icon set with
-`cargo tauri icon src-tauri/icons/logo.svg`. Other concepts are in `design/logos/`.
+The UI follows `design/docboxapp.pen` (a pen.dev file: Setup, Models and Read a file
+screens, plus the brand sheet). The logo's source is `src-tauri/icons/logo.svg`;
+regenerate the icon set with `cargo tauri icon src-tauri/icons/logo.svg`. Older concepts
+are in `design/logos/`.
 
 ## Releasing
 
@@ -277,3 +291,10 @@ design/logos/         logo concepts and icon sets
 docs/screenshots/     README screenshots
 .github/workflows/    CI and release pipelines
 ```
+
+## License
+
+Copyright 2026 DocBox AI team (Pranav and Pawan).
+
+DocBox is licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE)
+for attribution, including the third-party font the searchable-PDF writer embeds.

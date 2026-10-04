@@ -39,6 +39,9 @@ services:
       context: .
       args:
         UV_EXTRAS: "--extra paddle"
+    environment:
+      # The orchestrator calls this container by its service name.
+      - DOCBOX_ALLOWED_HOSTS=paddleocr
     volumes:
       - paddleocr-models:/data
 
@@ -47,11 +50,17 @@ services:
       context: .
       args:
         UV_EXTRAS: "--extra paddle"
+    environment:
+      # The orchestrator calls this container by its service name.
+      - DOCBOX_ALLOWED_HOSTS=paddleocr-vl
     volumes:
       - paddleocr-vl-models:/data
 
   tesseract:
     build: .
+    environment:
+      # The orchestrator calls this container by its service name.
+      - DOCBOX_ALLOWED_HOSTS=tesseract
     volumes:
       - tesseract-models:/data
 
@@ -60,6 +69,9 @@ services:
       context: .
       args:
         UV_EXTRAS: "--extra easyocr"
+    environment:
+      # The orchestrator calls this container by its service name.
+      - DOCBOX_ALLOWED_HOSTS=easyocr
     volumes:
       - easyocr-models:/data
 

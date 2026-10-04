@@ -1,70 +1,66 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, XCircle, KeyRound, Cloud, Server, ExternalLink, Type } from "lucide-react";
+import { ExternalLink, KeyRound } from "lucide-react";
 import { api, type PlatformStatus } from "../lib/api";
+import { useApp } from "../lib/app";
 import { PrerequisiteCard } from "./PrerequisiteCard";
+import { Button, Card, Chip, SectionLabel, Switch } from "./ui";
 
-function PlatformCard({
-  icon: Icon,
+function StatusChip({ status }: { status: PlatformStatus | undefined }) {
+  if (!status) return null;
+  return status.available ? <Chip tone="success">Connected</Chip> : <Chip tone="warning">Not connected</Chip>;
+}
+
+function Connection({
   title,
+  where,
   status,
   children,
 }: {
-  icon: typeof Cloud;
   title: string;
-  status: PlatformStatus | undefined;
-  children?: React.ReactNode;
+  where: string;
+  status?: PlatformStatus;
+  children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-panel p-5">
-      <div className="mb-3 flex items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-pale">
-          <Icon className="h-5 w-5 text-accent" strokeWidth={2} />
+    <section aria-label={title} className="flex min-w-0 flex-[1_1_360px] flex-col gap-2.5">
+      <SectionLabel>{where}</SectionLabel>
+      <Card className="flex flex-1 flex-col gap-4 px-5 pt-4 pb-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-heading text-[26px] leading-[1.1] font-semibold tracking-[-0.5px]">{title}</h2>
+          <StatusChip status={status} />
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="font-medium">{title}</div>
-        </div>
-        {status &&
-          (status.available ? (
-            <span className="flex items-center gap-1 rounded-full bg-accent-pale px-2 py-0.5 text-xs text-accent">
-              <CheckCircle2 className="h-3 w-3" /> Connected
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 rounded-full bg-panel-2 px-2 py-0.5 text-xs text-text-muted">
-              <XCircle className="h-3 w-3" /> Not connected
-            </span>
-          ))}
-      </div>
-      {status?.detail && <p className="mb-3 text-sm text-text-muted">{status.detail}</p>}
-      {children}
-    </div>
+        {status?.detail && <p className="text-sm leading-relaxed text-fg-muted">{status.detail}</p>}
+        {children}
+      </Card>
+    </section>
   );
 }
 
 export function PlatformsView() {
+  const { settings, updateSettings, bump } = useApp();
   const [platforms, setPlatforms] = useState<PlatformStatus[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [keySaved, setKeySaved] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [savingKey, setSavingKey] = useState(false);
   const [keyError, setKeyError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
     try {
-      setPlatforms(await api.listPlatforms());
+      const [list, key] = await Promise.all([api.listPlatforms(), api.nvidiaApiKeyStatus()]);
+      setPlatforms(list);
+      setKeySaved(key.configured);
     } catch {
-      // Backend unreachable state is already surfaced elsewhere (Device tab); keep
-      // this view quiet rather than duplicating a connectivity error banner.
-    } finally {
-      setLoading(false);
+      // An unreachable backend is reported by the other views; keep this one quiet.
     }
   }, []);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, settings?.cloud_enabled]);
 
   const ollama = platforms.find((p) => p.id === "ollama");
   const nvidia = platforms.find((p) => p.id === "nvidia-nim");
+  const cloud = settings?.cloud_enabled ?? false;
 
   const saveKey = useCallback(async () => {
     if (!apiKeyInput.trim()) return;
@@ -74,12 +70,13 @@ export function PlatformsView() {
       await api.setNvidiaApiKey(apiKeyInput.trim());
       setApiKeyInput("");
       await refresh();
+      bump();
     } catch (err) {
       setKeyError(err instanceof Error ? err.message : String(err));
     } finally {
       setSavingKey(false);
     }
-  }, [apiKeyInput, refresh]);
+  }, [apiKeyInput, refresh, bump]);
 
   const clearKey = useCallback(async () => {
     setSavingKey(true);
@@ -87,91 +84,95 @@ export function PlatformsView() {
     try {
       await api.clearNvidiaApiKey();
       await refresh();
+      bump();
     } catch (err) {
       setKeyError(err instanceof Error ? err.message : String(err));
     } finally {
       setSavingKey(false);
     }
-  }, [refresh]);
+  }, [refresh, bump]);
 
   return (
-    <div>
-      <p className="mb-6 max-w-[60ch] leading-relaxed text-text-muted">
-        Some engines use a program or service from outside DocBox. Ollama and Tesseract
-        run on this computer; NVIDIA NIM sends images to NVIDIA's cloud once you connect
-        it.
+    <div className="flex flex-col gap-4">
+      <p className="max-w-[70ch] text-sm leading-relaxed text-fg-muted">
+        Some engines use a program or service from outside DocBox. Ollama and Tesseract run on
+        this computer; NVIDIA NIM sends images to NVIDIA's cloud, and only while the cloud
+        engine is switched on.
       </p>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <PlatformCard icon={Server} title="Ollama" status={ollama}>
-          <p className="mb-3 text-xs text-text-muted">
-            Once Ollama is running, pick a model under Setup › Ollama and DocBox
-            downloads it for you.
+      <div className="flex flex-wrap items-stretch gap-4">
+        <Connection title="Ollama" where="On this computer" status={ollama}>
+          <p className="text-[13px] text-fg-muted">
+            Once Ollama is running, pick a model under Setup › Ollama and DocBox downloads it for you.
           </p>
           <PrerequisiteCard id="ollama" onReady={() => void refresh()} />
-        </PlatformCard>
+        </Connection>
 
-        <PlatformCard icon={Type} title="Tesseract" status={undefined}>
-          <p className="mb-3 text-xs text-text-muted">
-            Tesseract needs its free program on this computer; DocBox handles the
-            rest.
+        <Connection title="Tesseract" where="On this computer">
+          <p className="text-[13px] text-fg-muted">
+            Tesseract needs its free program on this computer; DocBox handles the rest.
           </p>
           <PrerequisiteCard id="tesseract" />
-        </PlatformCard>
+        </Connection>
 
-        <PlatformCard icon={Cloud} title="NVIDIA NIM" status={nvidia}>
-          <p className="mb-3 text-xs text-warn">
-            Cloud, not local — images sent through a NIM model are uploaded to NVIDIA's
-            API using the key below. This is the only non-local model source in DocBox.
-          </p>
-          {nvidia?.available ? (
-            <button
-              type="button"
-              onClick={() => void clearKey()}
-              disabled={savingKey}
-              className="rounded-full border border-border px-3 py-1.5 text-sm font-medium text-text hover:bg-panel-2 disabled:opacity-50"
-            >
-              Remove API key
-            </button>
+        <Connection title="NVIDIA NIM" where="In the cloud" status={nvidia}>
+          <Card tone="grey" className="flex items-center justify-between gap-3 px-4 py-3">
+            <span className="text-sm font-medium">
+              Cloud engine {cloud ? "on" : "off"}
+              <span className="block text-[13px] font-normal text-on-light-muted">
+                {cloud ? "Images read with NIM models go to NVIDIA." : "Nothing leaves this computer."}
+              </span>
+            </span>
+            <Switch
+              label="Cloud engine: allow NVIDIA's cloud models"
+              checked={cloud}
+              disabled={!settings}
+              onChange={(next) => void updateSettings({ cloud_enabled: next })}
+            />
+          </Card>
+          {keySaved ? (
+            <div>
+              <Button size="sm" variant="outline" onClick={() => void clearKey()} disabled={savingKey}>
+                Remove API key
+              </Button>
+            </div>
           ) : (
-            <div className="flex flex-col gap-2">
-              <div className="flex items-center gap-2 rounded-full border border-border bg-bg px-3 py-1.5">
-                <KeyRound className="h-3.5 w-3.5 text-text-muted" />
+            <form
+              className="flex flex-col gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void saveKey();
+              }}
+            >
+              <label className="flex h-10 items-center gap-2 rounded-xl bg-ink px-3 ring-1 ring-line ring-inset focus-within:ring-secondary">
+                <KeyRound aria-hidden="true" className="h-4 w-4 text-fg-muted" />
+                <span className="sr-only">NVIDIA API key</span>
                 <input
                   type="password"
                   value={apiKeyInput}
                   onChange={(e) => setApiKeyInput(e.target.value)}
                   placeholder="NVIDIA API key"
-                  className="w-full bg-transparent text-sm outline-none placeholder:text-text-muted"
+                  autoComplete="off"
+                  className="w-full bg-transparent text-sm outline-none placeholder:text-fg-muted focus-visible:outline-none"
                 />
-              </div>
-              <div className="flex items-center justify-between">
+              </label>
+              <div className="flex items-center justify-between gap-3">
                 <a
                   href="https://build.nvidia.com"
                   target="_blank"
                   rel="noreferrer"
-                  className="flex items-center gap-1 text-xs text-text-muted hover:text-text"
+                  className="flex items-center gap-1 text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
                 >
-                  Get a key at build.nvidia.com <ExternalLink className="h-3 w-3" />
+                  Get a key at build.nvidia.com <ExternalLink aria-hidden="true" className="h-3 w-3" />
                 </a>
-                <button
-                  type="button"
-                  onClick={() => void saveKey()}
-                  disabled={savingKey || !apiKeyInput.trim()}
-                  className="rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-                >
+                <Button type="submit" size="sm" disabled={savingKey || !apiKeyInput.trim()}>
                   Connect
-                </button>
+                </Button>
               </div>
-              {keyError && <p className="text-xs text-warn">{keyError}</p>}
-            </div>
+            </form>
           )}
-        </PlatformCard>
+          {keyError && <p className="text-xs text-danger">{keyError}</p>}
+        </Connection>
       </div>
-
-      {loading && platforms.length === 0 && (
-        <p className="mt-4 text-sm text-text-muted">Checking platforms…</p>
-      )}
     </div>
   );
 }
