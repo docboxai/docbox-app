@@ -233,7 +233,9 @@ A plain `uv sync` removes extras you didn't pass, so always pass the ones you wa
 
 - Backend only: `uv run python -m docbox.backend.main --port 8756`, then
   `http://127.0.0.1:8756/docs`.
-- Frontend only: `npm --prefix frontend run dev` (uses `http://127.0.0.1:8756` outside Tauri).
+- Frontend only: `npm --prefix frontend run dev`. In a plain browser the app calls `/api` on
+  its own origin and Vite proxies it to `http://127.0.0.1:8756` (set `DOCBOX_BACKEND_URL`
+  to point elsewhere), so it also works behind a reverse proxy or from another device.
 - Tests and lint: `uv run pytest`, `uv run ruff check src/docbox tests`.
 - Local installer: `cd src-tauri && cargo tauri build`. `build.rs` copies your own `uv` in
   as the sidecar when `src-tauri/binaries/` is empty. Updater artifacts need the signing

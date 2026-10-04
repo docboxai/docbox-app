@@ -152,8 +152,9 @@ export function formatBytes(bytes: number): string {
 
 let baseUrlPromise: Promise<string> | null = null;
 
-// Falls back to the backend's default port when not running inside the Tauri
-// webview (e.g. `npm run dev` opened directly in a browser for UI iteration).
+// Outside the Tauri webview (`npm run dev` in a browser, including from another device
+// through a reverse proxy) requests go to this page's own origin, and Vite proxies /api
+// to the backend (vite.config.ts). Same-origin means no CORS or mixed-content issues.
 async function getBaseUrl(): Promise<string> {
   if (!baseUrlPromise) {
     baseUrlPromise =
@@ -163,7 +164,7 @@ async function getBaseUrl(): Promise<string> {
             baseUrlPromise = null;
             throw err;
           })
-        : Promise.resolve("http://127.0.0.1:8756");
+        : Promise.resolve("");
   }
   return baseUrlPromise;
 }
