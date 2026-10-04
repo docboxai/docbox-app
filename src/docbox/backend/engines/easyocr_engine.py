@@ -81,8 +81,11 @@ class EasyOcrEngine:
         results = self._reader.readtext(np.array(image.convert("RGB")))
 
         lines: list[OcrLine] = []
-        for _bbox, text, confidence in results:
-            lines.append(OcrLine(text=text, confidence=float(confidence)))
+        for bbox, text, confidence in results:
+            xs = [float(p[0]) for p in bbox]
+            ys = [float(p[1]) for p in bbox]
+            box = [min(xs), min(ys), max(xs), max(ys)]
+            lines.append(OcrLine(text=text, confidence=float(confidence), box=box))
 
         return OcrResult(
             model_id=self._model_id,

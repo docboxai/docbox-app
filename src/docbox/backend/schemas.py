@@ -17,11 +17,21 @@ class DeviceCapabilities(BaseModel):
     cpu_physical_cores: int
     cpu_logical_cores: int
     disk_free_gb: float
+    disk_total_gb: float
+    # The main graphics card, for display; DocBox's own engines run on the CPU either way.
+    gpu_name: str | None = None
+    os_name: str
+    arch: str
 
 
 class FitResult(BaseModel):
     fits: bool
+    # Hard blockers: not enough RAM or disk.
     reasons: list[str] = []
+    # Soft warnings that don't stop it running (e.g. a big vision model on a CPU).
+    notes: list[str] = []
+    # One short phrase for tables and chips: "Runs well", "Needs 8 GB free RAM", ...
+    summary: str = "Runs well"
 
 
 # What one click on a model will do:
@@ -30,6 +40,22 @@ class FitResult(BaseModel):
 # needs_engine      -> install the engine's packages, then download the weights
 # needs_prerequisite-> the user must install/start an external program first (Ollama, Tesseract)
 ModelStatus = Literal["ready", "needs_download", "needs_engine", "needs_prerequisite"]
+
+
+# "paused": the user paused it; starting the download again resumes it.
+DownloadState = Literal["pending", "installing", "downloading", "paused", "done", "error"]
+
+
+class DownloadStartResponse(BaseModel):
+    job_id: str
+
+
+class DownloadStatus(BaseModel):
+    job_id: str
+    model_id: str
+    state: DownloadState
+    progress_pct: float | None = None
+    message: str | None = None
 
 
 class ModelInfo(BaseModel):
@@ -47,26 +73,17 @@ class ModelInfo(BaseModel):
     requires_extra: str | None = None
     prerequisite: str | None = None
     fit: FitResult
-
-
-DownloadState = Literal["pending", "installing", "downloading", "done", "error"]
-
-
-class DownloadStartResponse(BaseModel):
-    job_id: str
-
-
-class DownloadStatus(BaseModel):
-    job_id: str
-    model_id: str
-    state: DownloadState
-    progress_pct: float | None = None
-    message: str | None = None
+    # The model's unfinished (running or paused) download, so the UI can show progress
+    # after the user navigates away and back.
+    active_job: DownloadStatus | None = None
 
 
 class OcrLine(BaseModel):
     text: str
     confidence: float | None = None
+    # [left, top, right, bottom] in the page image's pixels, for engines that report
+    # positions; used to place the invisible text layer of a searchable PDF.
+    box: list[float] | None = None
 
 
 class OcrResult(BaseModel):
@@ -121,3 +138,50 @@ class EngineRemoveResult(BaseModel):
     removed: bool
     pending_restart: bool
     detail: str
+
+
+class Settings(BaseModel):
+    default_model_id: str | None
+    cloud_enabled: bool
+    output_dir: str
+
+
+class SettingsUpdate(BaseModel):
+    # Fields left out are unchanged; default_model_id="" clears the default.
+    default_model_id: str | None = None
+    cloud_enabled: bool | None = None
+
+
+OutputFormat = Literal["txt", "md", "pdf", "json"]
+ReadState = Literal["queued", "reading", "done", "error", "cancelled"]
+
+
+class ReadSummary(BaseModel):
+    """One file read, as listed under Recent files."""
+
+    id: str
+    file_name: str
+    model_id: str
+    model_name: str
+    output_format: OutputFormat
+    state: ReadState
+    pages_total: int | None = None
+    pages_done: int = 0
+    seconds: float | None = None
+    created_at: float
+    output_path: str | None = None
+    error: str | None = None
+
+
+class ReadPage(BaseModel):
+    lines: list[OcrLine]
+    text: str
+
+
+class ReadDetail(ReadSummary):
+    pages: list[ReadPage] = []
+    text: str = ""
+
+
+class ReadStartResponse(BaseModel):
+    reads: list[ReadSummary]

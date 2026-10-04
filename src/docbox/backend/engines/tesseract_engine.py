@@ -110,15 +110,22 @@ class TesseractEngine:
         dest = _traineddata_path(self._lang)
         with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as tmp_file:
             tmp_path = Path(tmp_file.name)
-            with requests.get(url, stream=True, timeout=30) as resp:
-                resp.raise_for_status()
-                total = int(resp.headers.get("content-length", 0))
-                downloaded = 0
-                for chunk in resp.iter_content(chunk_size=1024 * 256):
-                    tmp_file.write(chunk)
-                    downloaded += len(chunk)
-                    if total:
-                        progress_cb(min(99.0, 100.0 * downloaded / total), "downloading")
+            try:
+                with requests.get(url, stream=True, timeout=30) as resp:
+                    resp.raise_for_status()
+                    total = int(resp.headers.get("content-length", 0))
+                    downloaded = 0
+                    for chunk in resp.iter_content(chunk_size=1024 * 256):
+                        tmp_file.write(chunk)
+                        downloaded += len(chunk)
+                        if total:
+                            progress_cb(min(99.0, 100.0 * downloaded / total), "downloading")
+            except BaseException:
+                # Failed or paused: don't leave a partial file behind (it's a few MB, so
+                # resuming simply downloads it again).
+                tmp_file.close()
+                tmp_path.unlink(missing_ok=True)
+                raise
 
         tmp_path.replace(dest)
         progress_cb(100.0, "ready")
@@ -147,21 +154,28 @@ class TesseractEngine:
 
         # Group recognized words into lines by (block, paragraph, line) triple, matching
         # Tesseract's own TSV line grouping.
-        line_words: dict[tuple[int, int, int], list[tuple[str, float]]] = {}
+        line_words: dict[tuple[int, int, int], list[tuple[str, float, tuple[int, ...]]]] = {}
         for i, text in enumerate(data["text"]):
             word = text.strip()
             if not word:
                 continue
             conf = float(data["conf"][i])
             key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
-            line_words.setdefault(key, []).append((word, conf))
+            left, top = data["left"][i], data["top"][i]
+            box = (left, top, left + data["width"][i], top + data["height"][i])
+            line_words.setdefault(key, []).append((word, conf, box))
 
         lines: list[OcrLine] = []
         for words in line_words.values():
-            text = " ".join(w for w, _ in words)
-            confidences = [c for _, c in words if c >= 0]
+            text = " ".join(w for w, _, _ in words)
+            confidences = [c for _, c, _ in words if c >= 0]
             avg_conf = (sum(confidences) / len(confidences) / 100.0) if confidences else None
-            lines.append(OcrLine(text=text, confidence=avg_conf))
+            boxes = [b for _, _, b in words]
+            line_box = [
+                float(min(b[0] for b in boxes)), float(min(b[1] for b in boxes)),
+                float(max(b[2] for b in boxes)), float(max(b[3] for b in boxes)),
+            ]
+            lines.append(OcrLine(text=text, confidence=avg_conf, box=line_box))
 
         return OcrResult(
             model_id=self._model_id,
