@@ -8,7 +8,7 @@ import { ModelsView } from "./components/ModelsView";
 import { OcrView } from "./components/OcrView";
 import { PlatformsView } from "./components/PlatformsView";
 import { SetupView } from "./components/SetupView";
-import { Frame, Hero, StatusBar, type HeroStat } from "./components/Shell";
+import { Frame, Hero, type HeroStat } from "./components/Shell";
 import { UpdateBanner } from "./components/UpdateBanner";
 
 const PAGES: Record<ViewId, { eyebrow: string; title: string }> = {
@@ -88,7 +88,6 @@ function Shell() {
           {view === "device" && <DeviceView />}
         </div>
       </main>
-      <StatusBar />
     </Frame>
   );
 }

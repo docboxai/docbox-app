@@ -24,6 +24,7 @@ function TopNav() {
             key={id}
             type="button"
             aria-current={active ? "page" : undefined}
+            title={label}
             onClick={() => navigate(id)}
             className={cx(
               "flex h-[30px] items-center gap-[5px] rounded-3xl px-3 text-[13px] font-medium whitespace-nowrap transition-colors",
@@ -134,26 +135,6 @@ export function Hero({
         <HardwareChart stat={stat} />
       </div>
     </header>
-  );
-}
-
-export function StatusBar() {
-  const { version, caps, settings } = useApp();
-  const cloud = settings?.cloud_enabled ?? false;
-  const platform = caps ? `${caps.os_name} · ${caps.arch}` : null;
-  return (
-    <footer className="flex shrink-0 flex-wrap items-center justify-between gap-x-5 gap-y-1 px-3 pt-1 text-[11px] font-medium tracking-[1.2px] uppercase">
-      <div className="flex items-center gap-5">
-        <span className="font-semibold text-fg">DocBox{version ? ` ${version}` : ""}</span>
-        <span className="text-fg-muted">
-          {cloud ? "Cloud engine on: NVIDIA models send images to NVIDIA" : "Everything stays on this computer"}
-        </span>
-      </div>
-      <div className="flex items-center gap-2 text-fg-muted">
-        <span aria-hidden="true" className={cx("h-2 w-2 rounded-full", cloud ? "bg-warning" : "bg-secondary")} />
-        {platform && <span>{platform} · {cloud ? "Cloud on" : "Offline OK"}</span>}
-      </div>
-    </footer>
   );
 }
 
