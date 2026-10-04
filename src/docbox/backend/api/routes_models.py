@@ -5,7 +5,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Response
 from docbox.backend import platforms
 from docbox.backend.core import prerequisites, runtime
 from docbox.backend.core.device import get_device_capabilities
-from docbox.backend.core.jobs import job_store
+from docbox.backend.core.jobs import DownloadJob, JobPaused, job_store
 from docbox.backend.core.registry import ModelSpec, check_fit, registry
 from docbox.backend.engines.base import NotDeletableError, ProgressCallback
 from docbox.backend.engines.remote_engine import EngineServiceError
@@ -68,6 +68,17 @@ def _to_model_info(spec: ModelSpec, snap: _Snapshot) -> ModelInfo:
         requires_extra=spec.requires_extra,
         prerequisite=spec.prerequisite,
         fit=check_fit(spec, snap.caps),
+        active_job=_job_status(job) if (job := job_store.unfinished_for(spec.id)) else None,
+    )
+
+
+def _job_status(job: DownloadJob) -> DownloadStatus:
+    return DownloadStatus(
+        job_id=job.job_id,
+        model_id=job.model_id,
+        state=job.state,
+        progress_pct=job.progress_pct,
+        message=job.message,
     )
 
 
@@ -92,6 +103,10 @@ def get_model(model_id: str) -> ModelInfo:
 
 def _scaled(job_id: str, state: str, lo: float, hi: float) -> ProgressCallback:
     def cb(pct: float, message: str) -> None:
+        # At 100% the files are already in place; pausing then would report a finished
+        # download as paused.
+        if pct < 100 and job_store.pause_requested(job_id):
+            raise JobPaused
         job_store.update(
             job_id, state=state, progress_pct=lo + (hi - lo) * pct / 100.0, message=message
         )
@@ -116,6 +131,8 @@ def _run_download(job_id: str, model_id: str) -> None:
                          message="starting download")
         spec.engine_factory().download(_scaled(job_id, "downloading", weights_from, 100))
         job_store.update(job_id, state="done", progress_pct=100.0, message="ready")
+    except JobPaused:
+        job_store.update(job_id, state="paused", message="paused")
     except Exception as exc:  # noqa: BLE001
         job_store.update(job_id, state="error", message=str(exc))
 
@@ -136,7 +153,8 @@ def start_download(model_id: str, background_tasks: BackgroundTasks) -> Download
             status_code=409, detail=f"{name} needs to be installed and running first."
         )
 
-    job = job_store.create(model_id)
+    paused = job_store.unfinished_for(model_id)
+    job = job_store.create(model_id, progress_pct=(paused.progress_pct or 0.0) if paused else 0.0)
     background_tasks.add_task(_run_download, job.job_id, model_id)
     return DownloadStartResponse(job_id=job.job_id)
 
@@ -146,13 +164,20 @@ def download_status(model_id: str, job_id: str) -> DownloadStatus:
     job = job_store.get(job_id)
     if job is None or job.model_id != model_id:
         raise HTTPException(status_code=404, detail=f"Unknown download job: {job_id}")
-    return DownloadStatus(
-        job_id=job.job_id,
-        model_id=job.model_id,
-        state=job.state,
-        progress_pct=job.progress_pct,
-        message=job.message,
-    )
+    return _job_status(job)
+
+
+@router.post("/{model_id}/download/pause", response_model=DownloadStatus)
+def pause_download(model_id: str, job_id: str) -> DownloadStatus:
+    """Ask a running download to stop at its next progress report; starting the download
+    again resumes it (Ollama keeps partial layers; the other engines redo the file that
+    was in flight)."""
+    job = job_store.get(job_id)
+    if job is None or job.model_id != model_id:
+        raise HTTPException(status_code=404, detail=f"Unknown download job: {job_id}")
+    if job_store.request_pause(job_id):
+        job_store.update(job_id, message="pausing after the current step")
+    return _job_status(job)
 
 
 @router.delete("/{model_id}", status_code=204)
@@ -160,6 +185,7 @@ def delete_model(model_id: str) -> Response:
     spec = _resolve(model_id)
     if job_store.active_for(model_id) is not None:
         raise HTTPException(status_code=409, detail="This model is downloading; wait for it.")
+    job_store.discard_paused(model_id)
     try:
         spec.engine_factory().delete()
     except NotDeletableError as exc:

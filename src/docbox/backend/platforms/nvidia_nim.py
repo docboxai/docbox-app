@@ -49,6 +49,14 @@ def _fetch_models(timeout: float = 5.0) -> list[str] | None:
 
 def status() -> dict:
     api_key = config_store.get_nvidia_api_key()
+    if api_key and not config_store.cloud_enabled():
+        return {
+            "id": "nvidia-nim",
+            "name": "NVIDIA NIM",
+            "available": False,
+            "detail": "API key saved, but the cloud engine is switched off, so nothing "
+            "leaves this computer. Switch it on to use NVIDIA's models.",
+        }
     if not api_key:
         return {
             "id": "nvidia-nim",
@@ -97,6 +105,8 @@ def _spec_for(nim_model: str) -> ModelSpec:
 
 
 def list_models() -> list[ModelSpec]:
+    if not config_store.cloud_enabled():
+        return []
     models = _fetch_models()
     if not models:
         return []
@@ -104,7 +114,7 @@ def list_models() -> list[ModelSpec]:
 
 
 def get_model_spec(model_id: str) -> ModelSpec | None:
-    if config_store.get_nvidia_api_key() is None:
+    if config_store.get_nvidia_api_key() is None or not config_store.cloud_enabled():
         return None
     nim_model = model_id.split(":", 1)[1] if ":" in model_id else ""
     if not nim_model:

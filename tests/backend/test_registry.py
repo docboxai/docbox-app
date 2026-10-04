@@ -45,6 +45,9 @@ def test_check_fit_passes_when_resources_sufficient() -> None:
         cpu_physical_cores=4,
         cpu_logical_cores=8,
         disk_free_gb=50,
+        disk_total_gb=500,
+        os_name="Linux",
+        arch="x86_64",
     )
     result = check_fit(spec, caps)
     assert result.fits is True
@@ -59,6 +62,9 @@ def test_check_fit_flags_insufficient_ram_and_disk() -> None:
         cpu_physical_cores=2,
         cpu_logical_cores=4,
         disk_free_gb=1,
+        disk_total_gb=100,
+        os_name="Linux",
+        arch="x86_64",
     )
     result = check_fit(spec, caps)
     assert result.fits is False

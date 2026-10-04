@@ -1,67 +1,72 @@
-@import "@fontsource-variable/plus-jakarta-sans";
-@import "@fontsource/ibm-plex-mono/500.css";
-@import "@fontsource/ibm-plex-mono/700.css";
+@import "@fontsource-variable/host-grotesk";
+@import "@fontsource-variable/dm-sans";
 @import "tailwindcss";
 
-/* Y2K poster palette: white ground, layered cobalt blues, black ink, one hot-pink tag.
-   `accent` is the darker cobalt so blue text and white-on-blue buttons stay readable;
-   `accent-bright` is for decorative shapes only. */
+/* DocBox palette (design/docboxapp.pen): an ink shell, Tolopea purples as the primary
+   scale and Madison blues as the secondary. "fg" is text on the dark shell and surfaces;
+   "on-light" is text on the purple, blue and grey cards. */
 @theme {
-  --color-bg: #ffffff;
-  --color-panel: #ffffff;
-  --color-panel-2: #f3f7fd;
-  --color-border: #d6e3f5;
-  --color-text: #0b0b0c;
-  --color-text-muted: #4f5866;
   --color-ink: #0b0b0c;
-  --color-accent: #1f63c6;
-  --color-accent-bright: #2f7de1;
-  --color-accent-light: #afcdf4;
-  --color-accent-pale: #e3eefc;
-  --color-pink: #ff2e7e;
-  --color-warn: #a3134f;
-  --color-warn-bg: #fff0f5;
-  --font-sans: "Plus Jakarta Sans Variable", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --color-surface: #1a1a1b;
+  --color-line: #2c2c2e;
+  --color-hero: #7f76ff; /* tolopea-400 */
+  --color-grey: #bbc0c4;
+  --color-fg: #f5f5f4;
+  --color-fg-muted: #9a9a9e;
+  --color-on-light: #0b0b0c;
+  --color-on-light-muted: #2e2e33;
+  --color-primary: #4318ff; /* tolopea-600 */
+  --color-primary-soft: #ceceff; /* tolopea-200 */
+  --color-primary-muted: #a9a7ff; /* tolopea-300 */
+  --color-secondary: #3ba8ff; /* madison-400 */
+  --color-secondary-soft: #7ac7ff; /* madison-300 */
+  --color-success: #17c964;
+  --color-warning: #f5a524;
+  --color-danger: #ff383c;
+  --font-sans: "DM Sans Variable", "Segoe UI", system-ui, sans-serif;
+  --font-heading: "Host Grotesk Variable", "DM Sans Variable", system-ui, sans-serif;
 }
 
-html,
-body,
-#root {
-  height: 100%;
+/* In the base layer so utilities (e.g. focus-visible:outline-none) can override them. */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--color-ink);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-secondary);
+    outline-offset: 2px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-line);
+    border-radius: 999px;
+  }
 }
 
-body {
-  background-color: var(--color-bg);
-  color: var(--color-text);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-}
-
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: var(--color-border);
-  border-radius: 999px;
-}
-
-/* Poster motifs, used decoratively (always aria-hidden). */
-.halftone {
-  background-image: radial-gradient(circle, var(--color-accent-bright) 1.3px, transparent 1.6px);
-  background-size: 9px 9px;
-}
-
-.skyline-light {
-  clip-path: polygon(0 40%, 20% 40%, 20% 0, 46% 0, 46% 25%, 70% 25%, 70% 10%, 100% 10%, 100% 100%, 0 100%);
-}
-
-.skyline-dark {
-  clip-path: polygon(0 30%, 40% 30%, 40% 0, 100% 0, 100% 100%, 0 100%);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -1,0 +1,8 @@
+DocBox
+Copyright 2026 DocBox AI team (Pranav and Pawan)
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The searchable-PDF writer (src/docbox/backend/core/pdf_writer.py) embeds the
+glyphless font from Tesseract OCR (https://github.com/tesseract-ocr/tesseract),
+which is licensed under the Apache License, Version 2.0.

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-import { HardDrive } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Trash2 } from "lucide-react";
 import { api, formatBytes, type EngineStorage, type StorageInfo } from "../lib/api";
+import { Button, Card, Chip, SectionLabel } from "./ui";
 
 // The full path starts with the user's profile folder, which is long and personal; the
 // last three folders are enough to find it (the full path shows on hover).
@@ -33,91 +34,55 @@ function EngineRow({ engine, onChanged }: { engine: EngineStorage; onChanged: ()
   const total = engine.package_bytes + engine.model_bytes;
 
   return (
-    <li className="flex flex-col gap-2 border-t border-border py-3 first:border-t-0">
+    <li className="flex flex-col gap-2 border-b border-line px-4 py-3 last:border-b-0">
       <div className="flex flex-wrap items-center gap-3">
         <span className="min-w-0 flex-1 text-sm font-medium">{engine.name}</span>
-        <span className="text-xs tabular-nums text-text-muted">
+        <span className="text-[13px] text-fg-muted tabular-nums">
           {engine.installed
             ? `${formatBytes(engine.package_bytes)} engine · ${formatBytes(engine.model_bytes)} models`
-            : "not installed"}
+            : "Not installed"}
         </span>
-        {engine.removal_pending && (
-          <span className="text-xs text-warn">removed on next restart</span>
-        )}
+        {engine.removal_pending && <Chip tone="warning">Removed on next restart</Chip>}
         {engine.installed && !engine.removal_pending && !confirm && (
-          <button
-            type="button"
-            onClick={() => setConfirm(true)}
-            className="rounded-full border border-border px-2.5 py-1 text-xs text-text-muted hover:bg-panel-2 hover:text-text"
-          >
+          <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setConfirm(true)}>
             Uninstall
-          </button>
+          </Button>
         )}
       </div>
       {confirm && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ink px-3 py-2">
-          <span className="flex-1 text-sm">
+        <div className="flex flex-wrap items-center gap-2 rounded-xl bg-line/60 px-3 py-2">
+          <span className="min-w-0 flex-1 text-sm">
             Uninstall {engine.name} and its downloaded models? Frees about {formatBytes(total)}.
           </span>
-          <button
-            type="button"
-            onClick={() => void uninstall()}
-            disabled={working}
-            className="rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-          >
+          <Button size="sm" variant="light" disabled={working} onClick={() => void uninstall()}>
             {working ? "Removing…" : "Uninstall"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfirm(false)}
-            className="rounded-full border border-border px-3 py-1.5 text-sm text-text hover:bg-panel-2"
-          >
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setConfirm(false)}>
             Keep
-          </button>
+          </Button>
         </div>
       )}
-      {note && <p className="text-xs text-text-muted">{note}</p>}
+      {note && <p className="text-xs text-fg-muted">{note}</p>}
     </li>
   );
 }
 
-export function StoragePanel({ refreshKey, onChanged }: { refreshKey: number; onChanged: () => void }) {
-  const [info, setInfo] = useState<StorageInfo | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setInfo(await api.engineStorage());
-    } catch {
-      setInfo(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load, refreshKey]);
-
-  if (!info) return null;
-
+export function StoragePanel({ info, onChanged }: { info: StorageInfo; onChanged: () => void }) {
   return (
-    <section aria-label="Storage" className="rounded-2xl border border-border bg-panel p-5">
-      <div className="mb-2 flex items-center gap-2 font-medium">
-        <HardDrive className="h-4 w-4 text-accent" /> Storage
+    <section aria-labelledby="engines-disk-label" className="flex flex-col gap-2.5">
+      <div className="flex flex-wrap items-baseline justify-between gap-3">
+        <SectionLabel id="engines-disk-label">Engines on disk</SectionLabel>
+        <span className="text-[13px] text-fg-muted" title={info.data_dir}>
+          Saved in {shortPath(info.data_dir)}
+        </span>
       </div>
-      <p className="mb-2 text-xs text-text-muted" title={info.data_dir}>
-        Saved in {shortPath(info.data_dir)}
-      </p>
-      <ul>
-        {info.engines.map((e) => (
-          <EngineRow
-            key={e.id}
-            engine={e}
-            onChanged={() => {
-              void load();
-              onChanged();
-            }}
-          />
-        ))}
-      </ul>
+      <Card>
+        <ul>
+          {info.engines.map((e) => (
+            <EngineRow key={e.id} engine={e} onChanged={onChanged} />
+          ))}
+        </ul>
+      </Card>
     </section>
   );
 }

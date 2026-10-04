@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -28,6 +29,10 @@ class ModelSpec:
     requires_extra: str | None = None
     # external program the user must have first: "tesseract" | "ollama" (core/prerequisites.py)
     prerequisite: str | None = None
+    # A large vision model that is slow on a CPU. DocBox's own engines always run on the
+    # CPU; `runs_on_gpu` marks engines that use a graphics card by themselves (Ollama).
+    slow_on_cpu: bool = False
+    runs_on_gpu: bool = False
 
 
 class ModelRegistry:
@@ -50,20 +55,34 @@ class ModelRegistry:
 registry = ModelRegistry()
 
 
+def _has_dedicated_gpu(caps: DeviceCapabilities) -> bool:
+    return bool(caps.gpu_name) and not caps.gpu_name.startswith(("Intel", "Microsoft Basic"))
+
+
 def check_fit(spec: ModelSpec, caps: DeviceCapabilities) -> FitResult:
     reasons: list[str] = []
-
+    summary: str | None = None
     available_mb = caps.ram_available_gb * 1024
     needed_mb = spec.approx_ram_mb + _RAM_SAFETY_MARGIN_MB
     if available_mb < needed_mb:
         reasons.append(
             f"Needs ~{needed_mb:.0f} MB free RAM, only {available_mb:.0f} MB available"
         )
-
+        summary = f"Needs {math.ceil(needed_mb / 1024)} GB free RAM"
     disk_free_mb = caps.disk_free_gb * 1024
     if disk_free_mb < spec.min_disk_mb:
         reasons.append(
             f"Needs ~{spec.min_disk_mb} MB free disk, only {disk_free_mb:.0f} MB available"
         )
+        summary = summary or f"Needs {math.ceil(spec.min_disk_mb / 1024)} GB free disk"
 
-    return FitResult(fits=not reasons, reasons=reasons)
+    notes: list[str] = []
+    if spec.slow_on_cpu and not (spec.runs_on_gpu and _has_dedicated_gpu(caps)):
+        notes.append("Slow without a GPU")
+
+    return FitResult(
+        fits=not reasons,
+        reasons=reasons,
+        notes=notes,
+        summary=summary or (notes[0] if notes else "Runs well"),
+    )

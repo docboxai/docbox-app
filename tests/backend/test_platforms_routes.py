@@ -27,9 +27,11 @@ def test_nvidia_platform_unavailable_without_key(client: TestClient) -> None:
 
 
 def test_set_and_clear_nvidia_api_key(client: TestClient) -> None:
+    assert client.get("/api/platforms/nvidia-nim/api-key").json() == {"configured": False}
     resp = client.post("/api/platforms/nvidia-nim/api-key", json={"api_key": "test-key-123"})
     assert resp.status_code == 200
     assert resp.json()["configured"] is True
+    assert client.get("/api/platforms/nvidia-nim/api-key").json() == {"configured": True}
     assert config_store.get_nvidia_api_key() == "test-key-123"
 
     resp = client.delete("/api/platforms/nvidia-nim/api-key")

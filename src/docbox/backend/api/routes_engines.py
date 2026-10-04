@@ -6,10 +6,11 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 
 from docbox.backend.core import runtime
 from docbox.backend.core.jobs import job_store
+from docbox.backend.core.opener import open_path
 from docbox.backend.core.paths import get_data_dir, get_models_dir
 from docbox.backend.core.registry import ModelSpec, registry
 from docbox.backend.schemas import EngineRemoveResult, EngineStorage, StorageInfo
@@ -58,7 +59,18 @@ def storage() -> StorageInfo:
                 and extra not in state.get("extras", []),
             )
         )
-    return StorageInfo(data_dir=str(get_data_dir()), engines=engines)
+    return StorageInfo(
+        data_dir=str(get_data_dir()),
+        models_bytes=_dir_bytes(get_models_dir()),
+        engines=engines,
+    )
+
+
+@router.post("/storage/open", status_code=204)
+def open_storage() -> Response:
+    """Show DocBox's models folder in the file manager."""
+    open_path(get_models_dir())
+    return Response(status_code=204)
 
 
 def _cheap_downloaded(spec: ModelSpec) -> bool:

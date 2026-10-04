@@ -16,7 +16,8 @@
         "width": 1280,
         "height": 820,
         "minWidth": 900,
-        "minHeight": 600
+        "minHeight": 600,
+        "dragDropEnabled": false
       }
     ],
     "security": {
@@ -27,6 +28,7 @@
     "active": true,
     "targets": "all",
     "createUpdaterArtifacts": true,
+    "copyright": "Copyright 2026 DocBox AI team (Pranav and Pawan)",
     "externalBin": ["binaries/uv"],
     "resources": {
       "../pyproject.toml": "backend/pyproject.toml",

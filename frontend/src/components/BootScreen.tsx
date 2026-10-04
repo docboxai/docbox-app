@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AlertTriangle, Loader2, RotateCcw } from "lucide-react";
-import { Logo } from "./Logo";
-import { CaptionBand } from "./Poster";
+import { RotateCcw } from "lucide-react";
+import { LogoMark, LogoTile } from "./Logo";
+import { Button, ProgressBar, Spinner } from "./ui";
 
 interface BootStatus {
   state: "starting" | "ready" | "failed";
@@ -49,98 +49,59 @@ export function BootGate({ children }: { children: React.ReactNode }) {
   const progress = status?.progress ?? 0;
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-bg text-text">
-      <div
-        aria-hidden="true"
-        className="absolute inset-x-0 bottom-12 h-56 bg-accent-light"
-        style={{
-          clipPath:
-            "polygon(0 55%, 8% 55%, 8% 30%, 17% 30%, 17% 48%, 26% 48%, 26% 12%, 33% 12%, 33% 40%, 45% 40%, 45% 22%, 58% 22%, 58% 50%, 66% 50%, 66% 8%, 74% 8%, 74% 35%, 86% 35%, 86% 18%, 94% 18%, 94% 45%, 100% 45%, 100% 100%, 0 100%)",
-        }}
-      />
-      <div
-        aria-hidden="true"
-        className="absolute inset-x-0 bottom-12 h-32 bg-accent-bright"
-        style={{
-          clipPath:
-            "polygon(0 60%, 12% 60%, 12% 25%, 21% 25%, 21% 55%, 37% 55%, 37% 10%, 49% 10%, 49% 45%, 62% 45%, 62% 30%, 79% 30%, 79% 60%, 90% 60%, 90% 20%, 100% 20%, 100% 100%, 0 100%)",
-        }}
-      />
-
-      <div className="relative flex flex-1 items-start justify-center overflow-y-auto px-6 pt-[12vh] pb-60">
-        <div className="flex w-full max-w-xl flex-col gap-5">
-          <div className="flex items-center gap-3.5">
-            <Logo size={56} />
-            <span className="text-5xl leading-none font-extrabold tracking-tighter">DocBox</span>
+    <div className="flex h-screen flex-col gap-4 bg-ink p-4 text-fg">
+      <div className="flex min-h-0 flex-1 flex-col justify-between gap-8 overflow-y-auto rounded-[20px] bg-hero px-7 pt-6 pb-7 text-on-light">
+        <div className="flex items-center gap-2.5">
+          <LogoTile />
+          <span className="font-heading text-xl font-bold">DocBox</span>
+        </div>
+        <div className="flex flex-wrap items-end justify-between gap-6">
+          <div className="flex max-w-xl min-w-0 flex-col gap-2.5">
+            <p className="text-[13px] font-medium tracking-[0.3px] text-on-light-muted">WELCOME</p>
+            <h1 className="font-heading text-[clamp(44px,5vw,64px)] leading-none font-semibold tracking-[-1.5px]">
+              {failed ? "DocBox couldn't start" : "Getting DocBox ready"}
+            </h1>
+            <p className="leading-relaxed text-on-light-muted">
+              {failed
+                ? "Something went wrong while starting DocBox's engine."
+                : "The first time, DocBox sets up its own tools. It takes a minute or two and needs an internet connection. Your files never leave this computer."}
+            </p>
           </div>
+          <LogoMark height={120} className="hidden text-ink/90 md:block" />
+        </div>
+      </div>
 
-          {failed ? (
-            <div className="rounded-[20px] border-2 border-warn bg-panel p-6">
-              <div className="mb-2 flex items-center gap-2 text-lg font-extrabold text-warn">
-                <AlertTriangle className="h-5 w-5" /> DocBox couldn't start
-              </div>
-              <pre className="mb-3 max-h-48 overflow-auto font-mono text-xs whitespace-pre-wrap text-text-muted">
-                {status?.message}
-              </pre>
-              {status?.log_path && (
-                <p className="mb-4 text-xs break-all text-text-muted">Logs: {status.log_path}</p>
-              )}
-              <button
-                type="button"
+      <div className="flex shrink-0 flex-col gap-3 rounded-2xl bg-surface px-5 py-4 ring-1 ring-line ring-inset">
+        {failed ? (
+          <>
+            <pre className="max-h-48 overflow-auto text-xs whitespace-pre-wrap text-fg-muted">{status?.message}</pre>
+            {status?.log_path && <p className="text-xs break-all text-fg-muted">Logs: {status.log_path}</p>}
+            <div>
+              <Button
+                variant="light"
+                icon={RotateCcw}
                 onClick={() => {
                   void invoke("retry_backend");
                   setStatus((s) => (s ? { ...s, state: "starting", progress: 0 } : s));
                 }}
-                className="flex min-h-11 items-center gap-2 rounded-full bg-ink px-5 font-bold text-white"
               >
-                <RotateCcw className="h-4 w-4" /> Try again
-              </button>
+                Try again
+              </Button>
             </div>
-          ) : (
-            <div className="flex flex-col gap-4 rounded-[20px] border-2 border-ink bg-panel p-6">
-              <div className="text-[22px] font-extrabold">Getting DocBox ready</div>
-              <p className="leading-relaxed text-text/80">
-                The first time, DocBox sets up its own tools. It takes a minute or two and
-                needs an internet connection. Your files never leave this computer.
-              </p>
-              <div>
-                <div
-                  className="h-3 overflow-hidden rounded-full bg-accent-pale"
-                  role="progressbar"
-                  aria-valuenow={Math.round(progress)}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-label="Setting up DocBox"
-                >
-                  <div
-                    className="h-3 rounded-full transition-all"
-                    style={{
-                      width: `${Math.max(4, progress)}%`,
-                      background:
-                        "repeating-linear-gradient(-45deg, var(--color-accent-bright) 0 10px, var(--color-accent) 10px 20px)",
-                    }}
-                  />
-                </div>
-                <div className="mt-2.5 flex items-center gap-2 text-sm">
-                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
-                  <span className="truncate">{status?.message || "Starting"}</span>
-                  <span className="ml-auto font-mono font-bold">{Math.round(progress)}%</span>
-                </div>
-              </div>
+          </>
+        ) : (
+          <>
+            <ProgressBar value={progress} label="Setting up DocBox" />
+            <div className="flex items-center gap-2 text-sm">
+              <Spinner className="text-secondary" />
+              <span className="truncate">{status?.message || "Starting"}</span>
+              <span className="ml-auto font-medium tabular-nums">{Math.round(progress)}%</span>
             </div>
-          )}
-          <p className="text-sm text-text-muted">
-            Reading engines like PaddleOCR install later, only when you choose one.
-          </p>
-        </div>
-      </div>
-
-      <div className="relative">
-        <CaptionBand>
-          <span>001</span>
-          <span>DOCBOX · LOCAL OCR</span>
-          <span className="text-accent-light">WELCOME</span>
-        </CaptionBand>
+            <p className="text-[13px] text-fg-muted">
+              Reading engines like PaddleOCR install later, only when you choose one.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

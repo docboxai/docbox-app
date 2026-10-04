@@ -75,7 +75,9 @@ npx tsc --noEmit                  # (run from frontend/) typecheck only
 ```
 
 Outside the Tauri webview there's no `backend_base_url` command, so `frontend/src/lib/api.ts`
-falls back to `http://127.0.0.1:8756` — start the backend standalone alongside it.
+calls `/api` on the page's own origin and Vite's dev/preview server proxies it to
+`http://127.0.0.1:8756` (override with `DOCBOX_BACKEND_URL`) — start the backend standalone
+alongside it. Same-origin, so the backend's CORS allowlist doesn't apply there.
 
 ### Tests and lint
 
@@ -206,18 +208,64 @@ isn't blocked. Download progress is polling-based (`GET .../download/status`), n
 deliberate, since this is single-user localhost traffic where a ~1s poll loop is simpler
 and just as robust.
 
-CORS in `main.py` is wide open (`allow_origins=["*"]`) — deliberate, not an oversight:
-this server only ever binds `127.0.0.1` for a single local desktop app, so there's no
-real cross-origin exposure to guard against.
+The server binds `127.0.0.1`, but a web page in the user's browser can still reach
+loopback, and the read history holds the text of the user's documents. `main.py` has three
+guards:
+- **CORS** allows only the app's own origins (Tauri's `tauri://localhost` /
+  `http://tauri.localhost` and the Vite dev server on :1420), plus `DOCBOX_CORS_ORIGINS`.
+- **Host check** (`TrustedHostMiddleware`): only `127.0.0.1` / `localhost`, plus
+  `DOCBOX_ALLOWED_HOSTS` (the Docker engine containers set their service names). This
+  stops DNS rebinding, where another site's hostname resolves to 127.0.0.1 and CORS
+  never applies. Tests' `client` fixture uses `base_url="http://127.0.0.1:8756"` for it.
+- **Cross-site writes**: a POST/PUT/PATCH/DELETE whose `Origin` isn't the backend's own
+  is refused unless it carries `X-DocBox-Client` (`core/client_header.py`), which other
+  sites can't add without a preflight they fail. Requests without `Origin` (curl,
+  `RemoteEngine`) and Swagger UI at `/docs` pass. `frontend/src/lib/api.ts` sends it.
+
+Startup work (marking unfinished reads as failed) runs in the app's lifespan, so building
+an app in tests doesn't touch the real read history.
+
+### Reading files, history and settings
+
+`/api/reads` (`api/routes_reads.py`, `core/reader.py`) reads whole files: every page of a
+PDF or multi-page TIFF (`core/pages.py`), one file at a time on a single worker thread,
+then saves `.txt`/`.md`/`.json` or a searchable `.pdf` (`core/pdf_writer.py`: the page
+image plus an invisible text layer in Tesseract's glyphless font) into the output folder
+(`Documents/DocBox` by default). `core/history.py` keeps the index and each read's text
+under `<data>/history/`; reads left unfinished when the backend stopped are marked failed
+at startup. `/api/ocr/run` (one page, answered directly) stays as the contract
+`RemoteEngine` speaks to engine containers. Open-file/folder actions only take a read id,
+never a path. `OcrLine.box` carries line positions from engines that report them
+(PaddleOCR, Tesseract, EasyOCR) so the PDF text lines up with the scan.
+
+`core/config_store.py` also holds the default model, the output folder and the cloud
+switch (`/api/settings`). With the switch off, NVIDIA NIM models are hidden and refused
+(`platforms.cloud_blocked`); an unset switch follows whether a key was saved.
+
+Downloads can be paused: `POST .../download/pause` sets a flag the job's progress callback
+checks, raising `JobPaused` at the engine's next progress report (every chunk for
+Tesseract/Ollama, every output line for `uv`, which is then killed; only between model
+files for PaddleOCR). Starting the download again resumes it. `ModelInfo.active_job`
+carries the running or paused job so the UI can rejoin it.
+
+Tests redirect the settings file to a temp dir (`tests/backend/conftest.py`); they never
+touch the developer's real NVIDIA key or settings.
 
 ### Frontend
 
 `frontend/src/lib/api.ts` is the single typed HTTP client; every backend schema in
-`schemas.py` should have a matching TS interface there. `App.tsx` + `Sidebar.tsx` do
-simple tab-based view routing (`ViewId` union type) — no router library, wrapped in
-`BootGate` (setup/first-run screen until the backend is ready). Per-model controls
-(status-aware button, progress, Remove with inline confirm) live in one shared
-`ModelActions` component; external-program setup in `PrerequisiteCard`. When adding a
+`schemas.py` should have a matching TS interface there. The UI follows
+`design/docboxapp.pen`: `components/Shell.tsx` is the frame (purple hero with the top-bar
+pill nav, cloud switch and title; status bar), `components/ui.tsx` holds the design's
+building blocks (chips, round icon actions, pill buttons, switch, cards, tabs), and the
+palette and fonts (Host Grotesk headings, DM Sans body) are tokens in `styles.css`.
+`lib/app.tsx` holds the current view (`ViewId`; no router library), device info,
+settings and a `revision` counter views refetch on; it sits inside `BootGate`
+(setup/first-run screen until the backend is ready). Per-model download state (start,
+progress, pause/resume, remove) is one hook, `lib/useModelJob.ts`, rendered by
+`ModelActions` (a compact table cell or the full panel); external-program setup is
+`PrerequisiteCard`. In Tauri, `dragDropEnabled` is off in `tauri.conf.json` so HTML5 file
+drops reach the Read a file drop zone. When adding a
 new engine, add its icon/label/capabilities/guidance to the maps in
 `frontend/src/lib/engineMeta.ts` (shared by Setup and Models).
 

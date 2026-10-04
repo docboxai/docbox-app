@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { Download, Loader2, X } from "lucide-react";
+import { Download, X } from "lucide-react";
+import { Button, Spinner } from "./ui";
 
 // Checks GitHub Releases once per launch; offers a one-click install when there's a
 // newer signed release. Installed engines and models live in the data dir, so they
@@ -51,32 +52,28 @@ export function UpdateBanner() {
   };
 
   return (
-    <div className="flex flex-wrap items-center gap-3 border-b border-ink bg-panel px-8 py-2 text-sm">
-      <span className="flex-1">
+    <div role="status" className="flex shrink-0 flex-wrap items-center gap-3 rounded-2xl bg-secondary-soft px-5 py-2 text-sm text-on-light">
+      <span className="flex-1 font-medium">
         DocBox {update.version} is available.
-        {error && <span className="ml-2 text-warn">{error}</span>}
+        {error && <span className="ml-2 font-normal">{error}</span>}
       </span>
       {phase === "idle" ? (
         <>
-          <button
-            type="button"
-            onClick={() => void install()}
-            className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1 text-sm font-medium text-white"
-          >
-            <Download className="h-3.5 w-3.5" /> Install &amp; restart
-          </button>
+          <Button size="sm" variant="ink" icon={Download} onClick={() => void install()}>
+            Install &amp; restart
+          </Button>
           <button
             type="button"
             onClick={() => setDismissed(true)}
             aria-label="Dismiss update notice"
-            className="rounded-full p-1 text-text-muted hover:bg-panel-2"
+            className="rounded-full p-1.5 hover:bg-ink/10"
           >
-            <X className="h-4 w-4" />
+            <X aria-hidden="true" className="h-4 w-4" />
           </button>
         </>
       ) : (
-        <span className="flex items-center gap-1.5 text-text-muted">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span className="flex items-center gap-1.5">
+          <Spinner />
           {phase === "downloading" ? `Downloading ${progress}%` : "Installing…"}
         </span>
       )}

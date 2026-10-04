@@ -98,6 +98,9 @@ def _spec_for(name: str, size_mb: int, description: str | None = None) -> ModelS
         min_disk_mb=size_mb,
         engine_factory=lambda n=name: OllamaOcrEngine(model_id=f"ollama:{n}", ollama_model=n),
         prerequisite="ollama",
+        # Vision-language models are slow on a CPU; Ollama uses a graphics card itself.
+        slow_on_cpu=True,
+        runs_on_gpu=True,
     )
 
 
