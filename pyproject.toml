@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Local, hassle-free OCR — set up and run open-source OCR models on your own machine"
 requires-python = ">=3.12,<3.13"
 license = "Apache-2.0"
+authors = [{ name = "DocBox AI team (Pranav and Pawan)" }]
 # Base install only: the API server and the light, pure-Python bits. Each engine family's
 # heavy packages are an extra below, installed on demand by `core/runtime.py` the first
 # time a user picks a model from that engine (or up front with `uv sync --all-extras`).
