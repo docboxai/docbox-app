@@ -180,9 +180,15 @@ async function errorMessage(resp: Response): Promise<string> {
   return `${resp.status} ${text}`;
 }
 
+// The backend refuses state-changing requests without this header (so other websites
+// can't trigger them with a form post); see backend core/client_header.py.
+const CLIENT_HEADER = { "X-DocBox-Client": "app" };
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const base = await getBaseUrl();
-  const resp = await fetch(`${base}${path}`, init);
+  const headers = new Headers(init?.headers);
+  for (const [k, v] of Object.entries(CLIENT_HEADER)) headers.set(k, v);
+  const resp = await fetch(`${base}${path}`, { ...init, headers });
   if (!resp.ok) throw new Error(await errorMessage(resp));
   if (resp.status === 204) return undefined as T;
   return resp.json() as Promise<T>;
