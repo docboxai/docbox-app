@@ -1,8 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1024" height="1024">
-  <!-- Concept G: the original roundel "D" mark, all blue on a white disc. -->
-  <circle cx="256" cy="256" r="240" fill="#FFFFFF" stroke="#D6E3F5" stroke-width="10"/>
-  <circle cx="256" cy="256" r="196" fill="none" stroke="#2F7DE1" stroke-width="26"/>
-  <path d="M268 150 H322 L400 256 L322 362 H268 L346 256 Z" fill="#174C9C"/>
-  <rect x="140" y="150" width="56" height="212" fill="#2F7DE1"/>
-  <path d="M220 150 H274 L352 256 L274 362 H220 L298 256 Z" fill="#2F7DE1"/>
-</svg>

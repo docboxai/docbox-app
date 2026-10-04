@@ -2,7 +2,7 @@
 @import "@fontsource-variable/dm-sans";
 @import "tailwindcss";
 
-/* DocBox palette (design/docboxapp.pen): an ink shell, Tolopea purples as the primary
+/* DocBox palette: an ink shell, Tolopea purples as the primary
    scale and Madison blues as the secondary. "fg" is text on the dark shell and surfaces;
    "on-light" is text on the purple, blue and grey cards. */
 @theme {

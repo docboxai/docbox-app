@@ -254,11 +254,10 @@ touch the developer's real NVIDIA key or settings.
 ### Frontend
 
 `frontend/src/lib/api.ts` is the single typed HTTP client; every backend schema in
-`schemas.py` should have a matching TS interface there. The UI follows
-`design/docboxapp.pen`: `components/Shell.tsx` is the frame (purple hero with the top-bar
-pill nav, cloud switch and title; status bar), `components/ui.tsx` holds the design's
-building blocks (chips, round icon actions, pill buttons, switch, cards, tabs), and the
-palette and fonts (Host Grotesk headings, DM Sans body) are tokens in `styles.css`.
+`schemas.py` should have a matching TS interface there. `components/Shell.tsx` is the
+frame (purple hero with the top-bar pill nav, cloud switch and title),
+`components/ui.tsx` holds the shared building blocks (chips, round icon actions, pill
+buttons, switch, cards, tabs), and the palette and fonts (Host Grotesk headings, DM Sans body) are tokens in `styles.css`.
 `lib/app.tsx` holds the current view (`ViewId`; no router library), device info,
 settings and a `revision` counter views refetch on; it sits inside `BootGate`
 (setup/first-run screen until the backend is ready). Per-model download state (start,
