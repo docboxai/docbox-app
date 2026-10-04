@@ -1,5 +1,5 @@
-// Building blocks from the design's component sheet (design/docboxapp.pen), shared by
-// every view: chips, round icon actions, pill buttons, the switch, cards and tabs.
+// Building blocks shared by every view: chips, round icon actions, pill buttons, the
+// switch, cards and tabs.
 import { useId, type ButtonHTMLAttributes, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle } from "lucide-react";

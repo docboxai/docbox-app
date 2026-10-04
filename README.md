@@ -242,10 +242,8 @@ A plain `uv sync` removes extras you didn't pass, so always pass the ones you wa
   as the sidecar when `src-tauri/binaries/` is empty. Updater artifacts need the signing
   key in `TAURI_SIGNING_PRIVATE_KEY`.
 
-The UI follows `design/docboxapp.pen` (a pen.dev file: Setup, Models and Read a file
-screens, plus the brand sheet). The logo's source is `src-tauri/icons/logo.svg`;
-regenerate the icon set with `cargo tauri icon src-tauri/icons/logo.svg`. Older concepts
-are in `design/logos/`.
+The logo's source is `src-tauri/icons/logo.svg`; regenerate the icon set with
+`cargo tauri icon src-tauri/icons/logo.svg`.
 
 ## Releasing
 
@@ -287,7 +285,6 @@ src/docbox/backend/   FastAPI app: routes, registry, engines, runtime + prerequi
 src-tauri/            Rust shell: first-run setup, backend lifecycle, updater
 frontend/             React + TypeScript + Tailwind UI (Vite)
 tests/backend/        pytest suite
-design/logos/         logo concepts and icon sets
 docs/screenshots/     README screenshots
 .github/workflows/    CI and release pipelines
 ```

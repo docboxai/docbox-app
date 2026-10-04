@@ -25,3 +25,6 @@ logs/
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Design sources (private, kept out of the repo)
+design/

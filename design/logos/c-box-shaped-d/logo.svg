@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1024" height="1024">
-  <!-- Concept C: the "D" chevron mark inside a hexagonal cube silhouette. -->
-  <polygon points="256,40 443,148 443,364 256,472 69,364 69,148" fill="#2F7DE1"/>
-  <polygon points="256,40 443,148 256,256 69,148" fill="#AFCDF4" fill-opacity="0.55"/>
-  <path d="M268 170 H318 L392 270 L318 370 H268 L342 270 Z" fill="#0B0B0C"/>
-  <rect x="148" y="170" width="52" height="200" fill="#FFFFFF"/>
-  <path d="M222 170 H272 L346 270 L272 370 H222 L296 270 Z" fill="#FFFFFF"/>
-  <rect x="384" y="384" width="96" height="96" fill="#FF2E7E" stroke="#FFFFFF" stroke-width="14"/>
-</svg>

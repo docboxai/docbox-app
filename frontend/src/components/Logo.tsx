@@ -1,5 +1,5 @@
-// The DocBox mark: a box with two shelves and a folded corner (design/docboxapp.pen,
-// "Logo/Mark"). It takes the current text colour, so each placement picks its own.
+// The DocBox mark: a box with two shelves and a folded corner. It takes
+// the current text colour, so each placement picks its own.
 export function LogoMark({ height = 20, className }: { height?: number; className?: string }) {
   return (
     <svg

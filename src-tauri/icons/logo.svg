@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="1024" height="1024">
-  <!-- DocBox app icon (design/docboxapp.pen, "Tile/App Icon"): the white mark on a
+  <!-- DocBox app icon: the white mark on a
        Tolopea 500 to 700 gradient tile. Same mark geometry as frontend/src/components/Logo.tsx.
        Regenerate every icon size with: cargo tauri icon src-tauri/icons/logo.svg -->
   <defs>
