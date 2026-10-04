@@ -12,7 +12,8 @@ from docbox.backend.main import create_app
 
 @pytest.fixture()
 def client() -> TestClient:
-    return TestClient(create_app())
+    # The Host the webview and the Vite proxy send; the backend refuses others.
+    return TestClient(create_app(), base_url="http://127.0.0.1:8756")
 
 
 @pytest.fixture(autouse=True)

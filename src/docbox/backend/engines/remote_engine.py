@@ -18,6 +18,7 @@ import time
 import requests
 from PIL import Image
 
+from docbox.backend.core.client_header import CLIENT_HEADER
 from docbox.backend.engines.base import ProgressCallback
 from docbox.backend.schemas import OcrResult
 
@@ -59,7 +60,10 @@ class RemoteEngine:
 
     def _request(self, method: str, path: str, *, timeout: float, **kwargs) -> requests.Response:
         try:
-            resp = requests.request(method, f"{self._base_url}{path}", timeout=timeout, **kwargs)
+            headers = {CLIENT_HEADER: "remote-engine", **kwargs.pop("headers", {})}
+            resp = requests.request(
+                method, f"{self._base_url}{path}", timeout=timeout, headers=headers, **kwargs
+            )
         except requests.Timeout:
             raise EngineServiceError(
                 504, f"Engine service at {self._base_url} timed out after {timeout:.0f}s"

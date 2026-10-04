@@ -103,7 +103,9 @@ def get_model(model_id: str) -> ModelInfo:
 
 def _scaled(job_id: str, state: str, lo: float, hi: float) -> ProgressCallback:
     def cb(pct: float, message: str) -> None:
-        if job_store.pause_requested(job_id):
+        # At 100% the files are already in place; pausing then would report a finished
+        # download as paused.
+        if pct < 100 and job_store.pause_requested(job_id):
             raise JobPaused
         job_store.update(
             job_id, state=state, progress_pct=lo + (hi - lo) * pct / 100.0, message=message

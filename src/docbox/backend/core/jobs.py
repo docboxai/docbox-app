@@ -101,7 +101,10 @@ class DownloadJobStore:
             if state is not None:
                 job.state = state
             if progress_pct is not None:
-                job.progress_pct = progress_pct
+                # Never backwards within one job: a resumed job starts at the paused
+                # percentage, and stage resets (or Ollama finding another layer) would
+                # otherwise make the bar jump back.
+                job.progress_pct = max(job.progress_pct or 0.0, progress_pct)
             if message is not None:
                 job.message = message
 

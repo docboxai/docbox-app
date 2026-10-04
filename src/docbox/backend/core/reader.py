@@ -184,5 +184,8 @@ def _save_output(job: _Job, pages: list[ReadPage], pdf_pages: list[PdfPage]) -> 
     if job.output_format == "pdf":
         path.write_bytes(write_searchable_pdf(pdf_pages))
     else:
-        path.write_text(render_text(job.file_name, pages, job.output_format), encoding="utf-8")
+        # newline="\n": the same file on every OS (no CRLF on Windows).
+        path.write_text(
+            render_text(job.file_name, pages, job.output_format), encoding="utf-8", newline="\n"
+        )
     return path

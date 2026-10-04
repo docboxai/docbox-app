@@ -208,10 +208,22 @@ isn't blocked. Download progress is polling-based (`GET .../download/status`), n
 deliberate, since this is single-user localhost traffic where a ~1s poll loop is simpler
 and just as robust.
 
-CORS in `main.py` allows only the app's own origins (Tauri's `tauri://localhost` /
-`http://tauri.localhost` and the Vite dev server on :1420), plus any listed in
-`DOCBOX_CORS_ORIGINS`. The server binds `127.0.0.1`, but a web page in the user's browser
-can still reach loopback, and the read history holds the text of the user's documents.
+The server binds `127.0.0.1`, but a web page in the user's browser can still reach
+loopback, and the read history holds the text of the user's documents. `main.py` has three
+guards:
+- **CORS** allows only the app's own origins (Tauri's `tauri://localhost` /
+  `http://tauri.localhost` and the Vite dev server on :1420), plus `DOCBOX_CORS_ORIGINS`.
+- **Host check** (`TrustedHostMiddleware`): only `127.0.0.1` / `localhost`, plus
+  `DOCBOX_ALLOWED_HOSTS` (the Docker engine containers set their service names). This
+  stops DNS rebinding, where another site's hostname resolves to 127.0.0.1 and CORS
+  never applies. Tests' `client` fixture uses `base_url="http://127.0.0.1:8756"` for it.
+- **Cross-site writes**: a POST/PUT/PATCH/DELETE whose `Origin` isn't the backend's own
+  is refused unless it carries `X-DocBox-Client` (`core/client_header.py`), which other
+  sites can't add without a preflight they fail. Requests without `Origin` (curl,
+  `RemoteEngine`) and Swagger UI at `/docs` pass. `frontend/src/lib/api.ts` sends it.
+
+Startup work (marking unfinished reads as failed) runs in the app's lifespan, so building
+an app in tests doesn't touch the real read history.
 
 ### Reading files, history and settings
 

@@ -395,7 +395,9 @@ def test_download_serves_only_the_recorded_output(client: TestClient, data_dir, 
 
     resp = client.get(f"/api/reads/{read_id}/file")
     assert resp.status_code == 200
-    assert resp.text == Path(body["output_path"]).read_text()
+    saved = Path(body["output_path"]).read_bytes()
+    assert b"\r" not in saved  # the same "\n" newlines on every OS, Windows included
+    assert resp.content == saved
     assert 'filename="scan.md"' in resp.headers["content-disposition"]
 
     Path(body["output_path"]).unlink()
