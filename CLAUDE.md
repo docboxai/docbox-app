@@ -75,7 +75,9 @@ npx tsc --noEmit                  # (run from frontend/) typecheck only
 ```
 
 Outside the Tauri webview there's no `backend_base_url` command, so `frontend/src/lib/api.ts`
-falls back to `http://127.0.0.1:8756` — start the backend standalone alongside it.
+calls `/api` on the page's own origin and Vite's dev/preview server proxies it to
+`http://127.0.0.1:8756` (override with `DOCBOX_BACKEND_URL`) — start the backend standalone
+alongside it. Same-origin, so the backend's CORS allowlist doesn't apply there.
 
 ### Tests and lint
 
