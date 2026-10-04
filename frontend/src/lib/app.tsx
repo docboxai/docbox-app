@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { getVersion } from "@tauri-apps/api/app";
 import { api, type DeviceCapabilities, type Settings } from "./api";
 
 export type ViewId = "setup" | "models" | "ocr" | "platforms" | "device";
@@ -7,7 +6,6 @@ export type ViewId = "setup" | "models" | "ocr" | "platforms" | "device";
 interface AppState {
   view: ViewId;
   navigate: (view: ViewId) => void;
-  version: string | null;
   caps: DeviceCapabilities | null;
   refreshCaps: () => Promise<void>;
   settings: Settings | null;
@@ -23,7 +21,6 @@ const AppContext = createContext<AppState | null>(null);
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<ViewId>("setup");
-  const [version, setVersion] = useState<string | null>(null);
   const [caps, setCaps] = useState<DeviceCapabilities | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
@@ -38,7 +35,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if ("__TAURI_INTERNALS__" in window) void getVersion().then(setVersion);
     void refreshCaps();
     api.getSettings().then(setSettings, (err) => setSettingsError(String(err)));
   }, [refreshCaps]);
@@ -63,7 +59,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       value={{
         view,
         navigate: setView,
-        version,
         caps,
         refreshCaps,
         settings,
