@@ -1,6 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ArrowLeft, Check, Loader2, Plus, RefreshCw } from "lucide-react";
+import {
+  ArrowDownRight,
+  ArrowLeft,
+  ArrowRight,
+  Check,
+  Download,
+  Ellipsis,
+  Loader,
+  Pause,
+  Play,
+  Plus,
+  RefreshCw,
+} from "lucide-react";
 import { api, type ModelInfo } from "../lib/api";
+import { useApp } from "../lib/app";
 import {
   ENGINE_BLURBS,
   ENGINE_CAPABILITIES,
@@ -10,13 +23,27 @@ import {
   ENGINE_PREREQUISITE,
   RECOMMENDED_MODEL_ID,
 } from "../lib/engineMeta";
+import { formatGb, shortGpu } from "../lib/format";
 import { languageNames } from "../lib/languages";
-import { ModelActions } from "./ModelActions";
-import { Chevrons } from "./Poster";
+import { useModelJob } from "../lib/useModelJob";
+import { ModelSetupPanel, isCloud, sizeLabel } from "./ModelActions";
 import { PrerequisiteCard } from "./PrerequisiteCard";
-import { StoragePanel } from "./StoragePanel";
+import {
+  Button,
+  Card,
+  Chip,
+  IconAction,
+  Notice,
+  ProgressBar,
+  SectionLabel,
+  Spinner,
+  StatCard,
+  Switch,
+  cx,
+  type CardTone,
+} from "./ui";
 
-type EngineState = "ready" | "needs" | "idle";
+type EngineState = "ready" | "needs" | "idle" | "checking";
 
 function engineState(engine: string, variants: ModelInfo[]): { state: EngineState; label: string } {
   if (variants.some((v) => v.status === "ready")) {
@@ -26,93 +53,160 @@ function engineState(engine: string, variants: ModelInfo[]): { state: EngineStat
   if (variants.some((v) => v.status === "needs_prerequisite")) {
     return { state: "needs", label: engine === "ollama" ? "Needs Ollama" : "Needs setup" };
   }
-  return { state: "idle", label: "Not set up yet" };
+  return { state: "idle", label: ENGINE_BLURBS[engine] ?? "" };
 }
 
-function StatusIcon({ state }: { state: EngineState }) {
-  if (state === "ready") {
-    return (
-      <span aria-hidden="true" className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-accent-bright">
-        <Check className="h-4 w-4 text-white" strokeWidth={3} />
-      </span>
-    );
-  }
-  if (state === "needs") {
-    return (
-      <span aria-hidden="true" className="flex h-[30px] w-[30px] items-center justify-center rounded-full bg-ink">
-        <svg width="14" height="14" viewBox="0 0 14 14">
-          <path d="M3 3 L11 11 M11 5 V11 H5" fill="none" stroke="#fff" strokeWidth="2" />
-        </svg>
-      </span>
-    );
-  }
-  return (
-    <span aria-hidden="true" className="flex h-[30px] w-[30px] items-center justify-center rounded-full border-2 border-ink">
-      <Plus className="h-3.5 w-3.5" strokeWidth={3} />
-    </span>
-  );
-}
+const ENGINE_LOOK: Record<EngineState, { tone: CardTone; action: "ink" | "primary-soft" | "light" }> = {
+  ready: { tone: "primary-muted", action: "ink" },
+  idle: { tone: "primary-soft", action: "ink" },
+  needs: { tone: "surface", action: "primary-soft" },
+  checking: { tone: "surface", action: "light" },
+};
 
 function EngineCard({
   engine,
   variants,
   checking,
-  onClick,
+  onOpen,
 }: {
   engine: string;
   variants: ModelInfo[];
   checking: boolean;
-  onClick: () => void;
+  onOpen: () => void;
 }) {
-  const { state, label } = engineState(engine, variants);
+  const { state, label } = checking
+    ? { state: "checking" as const, label: "Checking…" }
+    : engineState(engine, variants);
+  const look = ENGINE_LOOK[state];
+  const name = ENGINE_LABELS[engine] ?? engine;
+  const icon = state === "ready" ? Check : state === "needs" ? ArrowDownRight : state === "checking" ? Loader : Plus;
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="flex min-h-32 flex-col justify-between gap-4 rounded-2xl border border-border bg-panel p-4.5 text-left transition-colors hover:border-ink"
+      onClick={onOpen}
+      aria-label={`${name}: ${label}`}
+      className="group flex min-h-[150px] min-w-[150px] flex-1 text-left"
     >
-      <span className="flex items-center justify-between gap-2">
-        {checking ? (
-          <span aria-hidden="true" className="flex h-[30px] w-[30px] items-center justify-center rounded-full border-2 border-border">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-text-muted" />
-          </span>
-        ) : (
-          <StatusIcon state={state} />
-        )}
-        <span className="text-[13px] font-medium text-text-muted">{checking ? "Checking…" : label}</span>
-      </span>
-      <span>
-        <span className="block text-lg font-bold">{ENGINE_LABELS[engine] ?? engine}</span>
-        <span className="mt-0.5 block text-[13px] text-text-muted">{ENGINE_BLURBS[engine]}</span>
-      </span>
+      <StatCard
+        tone={look.tone}
+        label={label}
+        value={name}
+        valueSize="md"
+        action={<IconAction icon={icon} label="" tone={look.action} spin={state === "checking"} />}
+        className="w-full transition-[filter] group-hover:brightness-110"
+      />
     </button>
   );
 }
 
-function RecommendedHero({ model, onChanged }: { model: ModelInfo; onChanged: () => void }) {
+function RecommendedCard({ model, onChanged }: { model: ModelInfo; onChanged: () => void }) {
+  const { navigate } = useApp();
+  const job = useModelJob(model, onChanged);
+  const busy = job.phase === "running" || job.phase === "pausing";
+  const ready = model.status === "ready" && job.phase === "idle";
+
+  let action;
+  if (busy) {
+    action = (
+      <IconAction
+        icon={Pause}
+        label={job.phase === "pausing" ? "Pausing after the current step" : "Pause"}
+        disabled={job.phase === "pausing"}
+        onClick={() => void job.pause()}
+      />
+    );
+  } else if (job.phase === "paused") {
+    action = <IconAction icon={Play} label="Resume" onClick={() => void job.start()} />;
+  } else if (ready) {
+    action = <IconAction icon={Check} label="Ready" />;
+  } else {
+    action = <IconAction icon={Download} label={`Install ${model.name}`} onClick={() => void job.start()} />;
+  }
+
   return (
-    <section
-      aria-label="Recommended model"
-      className="relative mb-8 flex flex-col gap-5 overflow-hidden rounded-[18px] bg-accent-pale px-7 py-6 sm:flex-row sm:items-center"
-    >
-      <div aria-hidden="true" className="halftone absolute -right-2 bottom-0 h-full w-[46%] opacity-35" />
-      <div aria-hidden="true" className="skyline-light absolute right-0 bottom-0 h-[42%] w-[30%] bg-accent-light" />
-      <div aria-hidden="true" className="skyline-dark absolute right-0 bottom-0 h-[26%] w-[18%] bg-accent-bright" />
-      <div className="relative min-w-0 flex-1">
-        <span className="rounded-full bg-ink px-2.5 py-1 font-mono text-[11px] font-bold tracking-wider text-white">
-          RECOMMENDED START
-        </span>
-        <div className="mt-3 text-2xl font-extrabold tracking-tight">{model.name}</div>
-        <div className="mt-1 text-text/80">
-          Small and fast on any computer. One click sets up everything it needs.
+    <Card tone="secondary-soft" className="flex min-h-[216px] flex-col justify-between gap-4 px-5 pt-4 pb-5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {model.fit.fits && <Chip>Best for this computer</Chip>}
+          {busy && <Chip>Installing · {Math.round(job.progress)}%</Chip>}
+          {job.phase === "paused" && <Chip>Paused · {Math.round(job.progress)}%</Chip>}
+          {ready && <Chip>Installed · {sizeLabel(model)}</Chip>}
         </div>
+        {action}
       </div>
-      <div className="relative rounded-2xl bg-panel/90 p-3 sm:w-80">
-        <ModelActions model={model} onChanged={onChanged} />
+      <div className="flex flex-col gap-3">
+        <h3 className="font-heading text-[clamp(26px,2.6vw,34px)] leading-[1.1] font-semibold tracking-[-0.6px]">
+          {model.name}
+        </h3>
+        {busy || job.phase === "paused" ? (
+          <div className="flex flex-col gap-1.5">
+            <ProgressBar value={job.progress} label={`Setting up ${model.name}`} light />
+            <div className="flex items-center gap-1.5 text-xs font-medium text-on-light">
+              {busy && <Spinner />}
+              <span className="truncate">
+                {job.phase === "paused"
+                  ? "Paused · press play to pick up where it stopped"
+                  : job.phase === "pausing"
+                    ? "Pausing after the current step…"
+                    : (job.message ?? "Working…")}
+              </span>
+            </div>
+          </div>
+        ) : ready ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-on-light-muted">Set up and ready. Next, read a file with it.</p>
+            <Button variant="ink" size="sm" icon={ArrowRight} onClick={() => navigate("ocr")}>
+              Read a file
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-on-light-muted">
+              Small and fast on any computer. One click sets up everything it needs ({sizeLabel(model)}).
+            </p>
+            <Button variant="ink" size="sm" icon={Download} onClick={() => void job.start()}>
+              Install
+            </Button>
+          </div>
+        )}
+        {job.error && <p className="text-xs text-on-light">{job.error}</p>}
       </div>
-    </section>
+    </Card>
   );
 }
+
+function DeviceCards({ engineReady }: { engineReady: (engine: string) => boolean }) {
+  const { caps, settings, updateSettings, navigate } = useApp();
+  const details = <IconAction icon={Ellipsis} label="Device details" tone="light" onClick={() => navigate("device")} />;
+  const cloud = settings?.cloud_enabled ?? false;
+  return (
+    <div className="grid grid-cols-2 gap-3">
+      <StatCard label="Memory" value={caps ? formatGb(caps.ram_total_gb) : "…"} action={details} className="min-h-[102px]" />
+      <StatCard label="Disk" value={caps ? formatGb(caps.disk_free_gb) : "…"} action={details} className="min-h-[102px]" />
+      <StatCard
+        label="Graphics"
+        value={caps?.gpu_name ? shortGpu(caps.gpu_name) : "CPU only"}
+        action={details}
+        className="min-h-[102px]"
+      />
+      <StatCard
+        tone="grey"
+        label="NVIDIA cloud engine"
+        value={cloud ? (engineReady("nvidia-nim") ? "On" : "On · no key") : "Off"}
+        action={
+          <Switch
+            label="Cloud engine: allow NVIDIA's cloud models"
+            checked={cloud}
+            disabled={!settings}
+            onChange={(next) => void updateSettings({ cloud_enabled: next })}
+          />
+        }
+        className="min-h-[102px]"
+      />
+    </div>
+  );
+}
+
 
 function EngineDetail({
   engine,
@@ -125,8 +219,8 @@ function EngineDetail({
   onBack: () => void;
   onChanged: () => void;
 }) {
+  const { navigate, settings } = useApp();
   const prerequisite = ENGINE_PREREQUISITE[engine];
-
   const [selectedId, setSelectedId] = useState<string>(
     () => (variants.find((v) => v.fit.fits) ?? variants[0])?.id ?? "",
   );
@@ -138,103 +232,104 @@ function EngineDetail({
   const selected = variants.find((v) => v.id === selectedId) ?? null;
 
   return (
-    <div>
-      <button
-        type="button"
-        onClick={onBack}
-        className="mb-5 flex min-h-11 items-center gap-2 font-semibold text-text/80 hover:text-text"
-      >
-        <ArrowLeft className="h-4 w-4" strokeWidth={2.5} /> All engines
-      </button>
-
-      <div className="mb-6 flex flex-wrap items-stretch gap-6">
-        <div className="min-w-0 flex-[1_1_420px]">
-          <h2 className="text-[34px] font-extrabold tracking-tight">{ENGINE_LABELS[engine] ?? engine}</h2>
-          <p className="mt-2 max-w-[58ch] leading-relaxed text-text/80">{ENGINE_CAPABILITIES[engine]}</p>
-        </div>
-        <aside className="relative flex-[1_1_320px] overflow-hidden rounded-2xl bg-accent-pale px-5 py-4">
-          <div aria-hidden="true" className="halftone absolute -top-1.5 -right-1.5 h-24 w-24 opacity-40" />
-          <div className="relative mb-1.5 font-bold">Which one do I need?</div>
-          <p className="relative leading-relaxed text-text/80">{ENGINE_GUIDANCE[engine]}</p>
-        </aside>
+    <div className="flex flex-col gap-4">
+      <div>
+        <Button variant="ghost" size="sm" icon={ArrowLeft} onClick={onBack}>
+          All engines
+        </Button>
+      </div>
+      <div className="flex flex-wrap items-stretch gap-4">
+        <Card className="flex min-w-0 flex-[1_1_420px] flex-col gap-2 px-5 py-4">
+          <h2 className="font-heading text-[34px] leading-[1.1] font-semibold tracking-[-0.6px]">
+            {ENGINE_LABELS[engine] ?? engine}
+          </h2>
+          <p className="max-w-[62ch] leading-relaxed text-fg-muted">{ENGINE_CAPABILITIES[engine]}</p>
+        </Card>
+        <Card tone="primary-soft" as="aside" className="flex flex-[1_1_320px] flex-col gap-1.5 px-5 py-4">
+          <h3 className="font-heading text-lg font-semibold">Which one do I need?</h3>
+          <p className="leading-relaxed text-on-light-muted">{ENGINE_GUIDANCE[engine]}</p>
+        </Card>
       </div>
 
-      {prerequisite && (
-        <div className="mb-6 max-w-2xl">
-          <PrerequisiteCard id={prerequisite} onReady={onChanged} />
-        </div>
-      )}
+      {prerequisite && <PrerequisiteCard id={prerequisite} onReady={onChanged} />}
 
       {variants.length === 0 ? (
-        <p className="text-text-muted">
+        <Card className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 text-fg-muted">
           {engine === "nvidia-nim"
-            ? "Not connected. Add an API key under Connections to see models here."
+            ? settings?.cloud_enabled
+              ? "Not connected. Add an API key under Connections to see models here."
+              : "The cloud engine is switched off. Switch it on, then add an API key under Connections."
             : "No versions available."}
-        </p>
+          {engine === "nvidia-nim" && (
+            <Button size="sm" variant="outline" onClick={() => navigate("platforms")}>
+              Open Connections
+            </Button>
+          )}
+        </Card>
       ) : (
-        <div className="flex flex-wrap items-start gap-5">
-          <section aria-label="Versions" className="flex min-w-0 flex-[999_1_480px] flex-col gap-2">
-            <h3 className="mb-1 text-lg font-bold">Versions</h3>
-            {variants.map((v) => {
-              const isSelected = v.id === selectedId;
-              return (
-                <button
-                  key={v.id}
-                  type="button"
-                  aria-pressed={isSelected}
-                  onClick={() => setSelectedId(v.id)}
-                  className={`flex min-h-14 items-center gap-3.5 rounded-[14px] bg-panel px-4.5 text-left ${
-                    isSelected ? "border-2 border-ink" : "border border-border hover:border-ink"
-                  }`}
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className={`block ${isSelected ? "font-bold" : "font-semibold"}`}>{v.name}</span>
-                    <span className="block text-[13px] text-text-muted">
-                      {languageNames(v.languages)}
-                      {!v.fit.fits && " · may not fit this computer"}
-                    </span>
-                  </span>
-                  <span className="font-mono text-[13px] font-bold">
-                    {v.engine === "nvidia-nim" ? "cloud" : `${v.approx_download_mb} MB`}
-                  </span>
-                  {v.status === "ready" && (
-                    <span className="rounded-full bg-accent-pale px-2.5 py-0.5 text-xs font-bold text-accent">
-                      Ready
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+        <div className="flex flex-wrap items-start gap-4">
+          <section aria-labelledby="versions-label" className="flex min-w-0 flex-[999_1_480px] flex-col gap-2.5">
+            <SectionLabel id="versions-label">Versions</SectionLabel>
+            <Card as="div" className="overflow-hidden">
+              <ul>
+                {variants.map((v) => {
+                  const isSelected = v.id === selectedId;
+                  return (
+                    <li key={v.id} className="border-b border-line last:border-b-0">
+                      <button
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => setSelectedId(v.id)}
+                        className={cx(
+                          "flex min-h-14 w-full items-center gap-3 px-4 text-left transition-colors",
+                          isSelected ? "bg-line/70" : "hover:bg-line/40",
+                        )}
+                      >
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium">{v.name}</span>
+                          <span className="block truncate text-[13px] text-fg-muted">
+                            {languageNames(v.languages)}
+                          </span>
+                        </span>
+                        <Chip tone={v.fit.fits && v.fit.notes.length === 0 ? "success" : "warning"} title={[...v.fit.reasons, ...v.fit.notes].join("; ") || undefined}>
+                          {v.fit.summary}
+                        </Chip>
+                        <span className="w-16 text-right text-[13px] text-fg-muted tabular-nums">{sizeLabel(v)}</span>
+                        {v.status === "ready" && (
+                          <Check aria-label="Installed" className="h-4 w-4 shrink-0 text-secondary" />
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </Card>
           </section>
 
-          {selected && (
-            <section
-              aria-label="Selected version"
-              className="flex flex-[1_1_340px] flex-col gap-3.5 rounded-[18px] border border-border bg-panel-2 p-5.5"
-            >
-              <div className="font-mono text-xs font-bold tracking-widest text-accent">SELECTED</div>
-              <div className="text-xl leading-snug font-extrabold">{selected.name}</div>
-              <div className="flex flex-wrap gap-1.5">
-                {selected.fit.fits ? (
-                  <span className="rounded-full bg-accent-pale px-2.5 py-0.5 text-[13px] font-bold text-accent">
-                    Fits this computer
-                  </span>
-                ) : (
-                  <span
-                    className="flex items-center gap-1 rounded-full bg-warn-bg px-2.5 py-0.5 text-[13px] font-bold text-warn"
-                    title={selected.fit.reasons.join("; ")}
-                  >
-                    <AlertTriangle className="h-3.5 w-3.5" /> May not fit this computer
-                  </span>
-                )}
-              </div>
-              <p className="text-sm leading-relaxed text-text-muted">{selected.description}</p>
-              <ModelActions key={selected.id} model={selected} onChanged={onChanged} />
-            </section>
-          )}
+          {selected && <SelectedVersion key={selected.id} model={selected} onChanged={onChanged} />}
         </div>
       )}
     </div>
+  );
+}
+
+function SelectedVersion({ model, onChanged }: { model: ModelInfo; onChanged: () => void }) {
+  const job = useModelJob(model, onChanged);
+  return (
+    <section aria-label="Selected version" className="flex flex-[1_1_340px] flex-col gap-2.5">
+      <SectionLabel>Selected</SectionLabel>
+      <Card tone="secondary-soft" className="flex flex-col gap-3 px-5 pt-4 pb-5">
+        <h3 className="font-heading text-[24px] leading-[1.15] font-semibold tracking-[-0.4px]">{model.name}</h3>
+        <p className="text-sm leading-relaxed text-on-light-muted">{model.description}</p>
+        {!model.fit.fits && (
+          <p className="text-sm font-medium text-on-light">May not fit: {model.fit.reasons.join("; ")}</p>
+        )}
+        {isCloud(model) && (
+          <p className="text-sm font-medium text-on-light">Runs in NVIDIA's cloud: images you read with it leave this computer.</p>
+        )}
+        <ModelSetupPanel model={model} job={job} light />
+      </Card>
+    </section>
   );
 }
 
@@ -242,18 +337,15 @@ export function SetupView() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [selectedEngine, setSelectedEngine] = useState<string | null>(null);
-  const [storageKey, setStorageKey] = useState(0);
-  // Until the first answer arrives, show "Checking…" rather than statuses derived from
-  // an empty list (which would wrongly read "Not set up yet").
   const [loaded, setLoaded] = useState(false);
+  const [selectedEngine, setSelectedEngine] = useState<string | null>(null);
+  const { revision, bump } = useApp();
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       setModels(await api.listModels());
-      setStorageKey((k) => k + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -264,7 +356,7 @@ export function SetupView() {
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, revision]);
 
   const grouped = useMemo(() => {
     const byEngine = new Map<string, ModelInfo[]>();
@@ -277,7 +369,9 @@ export function SetupView() {
   }, [models]);
 
   const recommended = models.find((m) => m.id === RECOMMENDED_MODEL_ID);
-  const onChanged = useCallback(() => void refresh(), [refresh]);
+  // The revision bump refetches this view (effect above) and the hero's numbers.
+  const onChanged = bump;
+  const engineReady = (engine: string) => (grouped.get(engine) ?? []).some((m) => m.status === "ready");
 
   if (selectedEngine) {
     return (
@@ -291,56 +385,52 @@ export function SetupView() {
   }
 
   return (
-    <div>
-      <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
-        <p className="max-w-[56ch] leading-relaxed text-text-muted">
-          Pick an engine. DocBox installs whatever it needs and keeps everything on this
-          computer.
-        </p>
-        <div className="flex items-center gap-4">
-          <Chevrons colors={["#afcdf4", "#2f7de1", "#0b0b0c", "#0b0b0c"]} />
-          <button
-            type="button"
+    <div className="flex flex-col gap-4">
+      {error && <Notice>Couldn't reach DocBox's engine: {error}</Notice>}
+
+      <div className="flex flex-wrap items-end gap-4">
+        <section aria-labelledby="recommended-label" className="flex min-w-0 flex-[1_1_440px] flex-col gap-2.5">
+          <SectionLabel id="recommended-label">Recommended start</SectionLabel>
+          {recommended ? (
+            <RecommendedCard model={recommended} onChanged={onChanged} />
+          ) : (
+            <Card tone="secondary-soft" className="flex min-h-[216px] items-center justify-center text-on-light-muted">
+              {loaded ? "The recommended model isn't available." : <Spinner className="h-6 w-6" />}
+            </Card>
+          )}
+        </section>
+        <section aria-labelledby="device-label" className="flex min-w-0 flex-[0_1_580px] flex-col gap-2.5 max-[1180px]:flex-[1_1_440px]">
+          <SectionLabel id="device-label">This device</SectionLabel>
+          <DeviceCards engineReady={engineReady} />
+        </section>
+      </div>
+
+      <section aria-labelledby="engines-label" className="flex flex-col gap-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <SectionLabel id="engines-label">All engines</SectionLabel>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={loading ? undefined : RefreshCw}
             onClick={() => void refresh()}
             disabled={loading}
-            aria-label="Refresh"
-            className="flex h-11 w-11 items-center justify-center rounded-full border border-border hover:bg-accent-pale disabled:opacity-50"
           >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </button>
+            {loading && <Spinner />}
+            Refresh
+          </Button>
         </div>
-      </div>
-
-      {error && (
-        <div className="mb-6 flex items-center gap-2 rounded-xl border border-warn/30 bg-warn-bg px-4 py-3 text-sm text-warn">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          Couldn't reach DocBox's engine: {error}
+        <div className="flex flex-wrap gap-3">
+          {ENGINE_ORDER.map((engine) => (
+            <EngineCard
+              key={engine}
+              engine={engine}
+              variants={grouped.get(engine) ?? []}
+              checking={!loaded}
+              onOpen={() => setSelectedEngine(engine)}
+            />
+          ))}
         </div>
-      )}
-
-      {recommended && recommended.status !== "ready" && (
-        <RecommendedHero model={recommended} onChanged={onChanged} />
-      )}
-
-      <div className="mb-3.5 flex flex-wrap items-baseline justify-between gap-3">
-        <h2 className="text-lg font-bold">All engines</h2>
-        <span className="text-[13px] text-text-muted">
-          4 run on this computer · 1 through Ollama · 1 in the cloud
-        </span>
-      </div>
-      <div className="mb-8 grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
-        {ENGINE_ORDER.map((engine) => (
-          <EngineCard
-            key={engine}
-            engine={engine}
-            variants={grouped.get(engine) ?? []}
-            checking={!loaded}
-            onClick={() => setSelectedEngine(engine)}
-          />
-        ))}
-      </div>
-
-      <StoragePanel refreshKey={storageKey} onChanged={onChanged} />
+      </section>
     </div>
   );
 }

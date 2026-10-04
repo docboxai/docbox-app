@@ -59,7 +59,11 @@ def storage() -> StorageInfo:
                 and extra not in state.get("extras", []),
             )
         )
-    return StorageInfo(data_dir=str(get_data_dir()), engines=engines)
+    return StorageInfo(
+        data_dir=str(get_data_dir()),
+        models_bytes=_dir_bytes(get_models_dir()),
+        engines=engines,
+    )
 
 
 @router.post("/storage/open", status_code=204)

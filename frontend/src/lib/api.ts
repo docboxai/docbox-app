@@ -6,11 +6,19 @@ export interface DeviceCapabilities {
   cpu_physical_cores: number;
   cpu_logical_cores: number;
   disk_free_gb: number;
+  disk_total_gb: number;
+  gpu_name: string | null;
+  os_name: string;
+  arch: string;
 }
 
 export interface FitResult {
   fits: boolean;
   reasons: string[];
+  // Soft warnings that don't stop it running, e.g. "Slow without a GPU".
+  notes: string[];
+  // One short phrase for tables and chips: "Runs well", "Needs 8 GB free RAM", ...
+  summary: string;
 }
 
 // What one click on the model does; see ModelStatus in backend/schemas.py.
@@ -31,9 +39,17 @@ export interface ModelInfo {
   requires_extra: string | null;
   prerequisite: string | null;
   fit: FitResult;
+  // Its running or paused download, if any.
+  active_job: DownloadStatus | null;
 }
 
-export type DownloadState = "pending" | "installing" | "downloading" | "done" | "error";
+export type DownloadState =
+  | "pending"
+  | "installing"
+  | "downloading"
+  | "paused"
+  | "done"
+  | "error";
 
 export interface DownloadStatus {
   job_id: string;
@@ -46,12 +62,7 @@ export interface DownloadStatus {
 export interface OcrLine {
   text: string;
   confidence: number | null;
-}
-
-export interface OcrResult {
-  model_id: string;
-  lines: OcrLine[];
-  text: string;
+  box: number[] | null;
 }
 
 export interface PlatformStatus {
@@ -89,6 +100,7 @@ export interface EngineStorage {
 
 export interface StorageInfo {
   data_dir: string;
+  models_bytes: number;
   engines: EngineStorage[];
 }
 
@@ -96,6 +108,40 @@ export interface EngineRemoveResult {
   removed: boolean;
   pending_restart: boolean;
   detail: string;
+}
+
+export interface Settings {
+  default_model_id: string | null;
+  cloud_enabled: boolean;
+  output_dir: string;
+}
+
+export type OutputFormat = "txt" | "md" | "pdf" | "json";
+export type ReadState = "queued" | "reading" | "done" | "error" | "cancelled";
+
+export interface ReadSummary {
+  id: string;
+  file_name: string;
+  model_id: string;
+  model_name: string;
+  output_format: OutputFormat;
+  state: ReadState;
+  pages_total: number | null;
+  pages_done: number;
+  seconds: number | null;
+  created_at: number;
+  output_path: string | null;
+  error: string | null;
+}
+
+export interface ReadPage {
+  lines: OcrLine[];
+  text: string;
+}
+
+export interface ReadDetail extends ReadSummary {
+  pages: ReadPage[];
+  text: string;
 }
 
 export function formatBytes(bytes: number): string {
@@ -145,11 +191,23 @@ export const api = {
   health: () => request<{ status: string }>("/api/health"),
   deviceCapabilities: () => request<DeviceCapabilities>("/api/device/capabilities"),
   listModels: () => request<ModelInfo[]>("/api/models"),
+  getSettings: () => request<Settings>("/api/settings"),
+  updateSettings: (patch: { default_model_id?: string; cloud_enabled?: boolean }) =>
+    request<Settings>("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }),
   startDownload: (modelId: string) =>
     request<{ job_id: string }>(`/api/models/${modelId}/download`, { method: "POST" }),
   downloadStatus: (modelId: string, jobId: string) =>
     request<DownloadStatus>(
       `/api/models/${modelId}/download/status?job_id=${encodeURIComponent(jobId)}`,
+    ),
+  pauseDownload: (modelId: string, jobId: string) =>
+    request<DownloadStatus>(
+      `/api/models/${modelId}/download/pause?job_id=${encodeURIComponent(jobId)}`,
+      { method: "POST" },
     ),
   deleteModel: (modelId: string) =>
     request<void>(`/api/models/${modelId}`, { method: "DELETE" }),
@@ -163,6 +221,7 @@ export const api = {
     ),
   startOllama: () => request<PrerequisiteInfo>("/api/prerequisites/ollama/start", { method: "POST" }),
   engineStorage: () => request<StorageInfo>("/api/engines/storage"),
+  openModelsFolder: () => request<void>("/api/engines/storage/open", { method: "POST" }),
   uninstallEngine: (id: string) =>
     request<EngineRemoveResult>(`/api/engines/${id}`, { method: "DELETE" }),
   listPlatforms: () => request<PlatformStatus[]>("/api/platforms"),
@@ -172,16 +231,20 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ api_key: apiKey }),
     }),
+  nvidiaApiKeyStatus: () =>
+    request<NvidiaApiKeyStatus>("/api/platforms/nvidia-nim/api-key"),
   clearNvidiaApiKey: () =>
     request<NvidiaApiKeyStatus>("/api/platforms/nvidia-nim/api-key", { method: "DELETE" }),
-  runOcr: async (modelId: string, file: File, page = 0): Promise<OcrResult> => {
-    const base = await getBaseUrl();
+  startReads: (modelId: string, files: File[], format: OutputFormat) => {
     const form = new FormData();
-    form.append("file", file);
+    for (const file of files) form.append("files", file);
     form.append("model_id", modelId);
-    form.append("page", String(page));
-    const resp = await fetch(`${base}/api/ocr/run`, { method: "POST", body: form });
-    if (!resp.ok) throw new Error(await errorMessage(resp));
-    return resp.json() as Promise<OcrResult>;
+    form.append("output_format", format);
+    return request<{ reads: ReadSummary[] }>("/api/reads", { method: "POST", body: form });
   },
+  listReads: () => request<ReadSummary[]>("/api/reads"),
+  getRead: (id: string) => request<ReadDetail>(`/api/reads/${id}`),
+  deleteRead: (id: string) => request<void>(`/api/reads/${id}`, { method: "DELETE" }),
+  openRead: (id: string, target: "file" | "folder") =>
+    request<void>(`/api/reads/${id}/open?target=${target}`, { method: "POST" }),
 };

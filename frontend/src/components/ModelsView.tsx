@@ -1,98 +1,169 @@
-import { useEffect, useState, useCallback, useMemo } from "react";
-import { CheckCircle2, AlertTriangle, ScanText, Search, RefreshCw, Cloud } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
-import { api, type ModelInfo } from "../lib/api";
-import { ENGINE_ICONS, ENGINE_LABELS } from "../lib/engineMeta";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, ChevronDown, Ellipsis, FolderOpen, Search } from "lucide-react";
+import { api, formatBytes, type ModelInfo, type StorageInfo } from "../lib/api";
+import { useApp } from "../lib/app";
+import { ENGINE_LABELS } from "../lib/engineMeta";
+import { formatGb } from "../lib/format";
 import { languageNames } from "../lib/languages";
-import { ModelActions } from "./ModelActions";
+import { useModelJob } from "../lib/useModelJob";
+import { ModelActionCell, ModelSetupPanel, isCloud, sizeLabel } from "./ModelActions";
+import { StoragePanel } from "./StoragePanel";
+import { Button, Card, Chip, IconAction, Notice, SectionLabel, Spinner, StatCard, cx } from "./ui";
 
-function engineIcon(engine: string): LucideIcon {
-  return ENGINE_ICONS[engine] ?? ScanText;
+// Columns drop out as the window narrows: languages first, then engine.
+const ROW_GRID =
+  "grid grid-cols-[minmax(0,1fr)_84px_170px_150px] lg:grid-cols-[minmax(0,1fr)_130px_90px_190px_160px] xl:grid-cols-[minmax(0,1fr)_150px_140px_110px_200px_160px]";
+
+function FitChip({ model }: { model: ModelInfo }) {
+  const ok = model.fit.fits && model.fit.notes.length === 0;
+  const why = [...model.fit.reasons, ...model.fit.notes].join("; ");
+  return (
+    <Chip tone={ok ? "success" : "warning"} title={why || undefined}>
+      {model.fit.summary}
+    </Chip>
+  );
 }
 
-function ModelCard({
-  model,
-  onChanged,
-}: {
-  model: ModelInfo;
-  onChanged: () => void;
-}) {
-  const Icon = engineIcon(model.engine);
-
+function LibraryRow({ model, onChanged, last }: { model: ModelInfo; onChanged: () => void; last: boolean }) {
+  const job = useModelJob(model, onChanged);
+  const [open, setOpen] = useState(false);
+  const detailId = `model-detail-${model.id.replace(/[^a-z0-9-]/gi, "-")}`;
+  const cell = "flex min-w-0 items-center px-4";
   return (
-    <div className="flex flex-col rounded-2xl border border-border bg-panel p-5">
-      <div className="mb-3 flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent-pale">
-          <Icon className="h-5 w-5 text-accent" strokeWidth={2} />
-        </div>
-        <div className="min-w-0">
-          <div className="truncate font-medium">{model.name}</div>
-          <div className="text-xs text-text-muted">{model.engine}</div>
-        </div>
-      </div>
-
-      <p className="mb-3 line-clamp-3 text-sm text-text-muted">{model.description}</p>
-
-      <div className="mb-4 flex flex-wrap gap-1.5">
-        <span className="rounded-full bg-panel-2 px-2 py-0.5 text-xs text-text-muted">
-          {languageNames(model.languages)}
-        </span>
-        {model.fit.fits ? (
-          <span className="flex items-center gap-1 rounded-full bg-accent-pale px-2 py-0.5 text-xs font-semibold text-accent">
-            <CheckCircle2 className="h-3 w-3" /> Fits this computer
-          </span>
-        ) : (
-          <span
-            className="flex items-center gap-1 rounded-full bg-warn-bg px-2 py-0.5 text-xs text-warn"
-            title={model.fit.reasons.join("; ")}
+    <li className={cx(!last && "border-b border-line", open && "bg-line/30")}>
+      <div className={cx(ROW_GRID, "min-h-[54px]")}>
+        <div className={cell}>
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={detailId}
+            onClick={() => setOpen((o) => !o)}
+            className="flex min-w-0 items-center gap-2 py-3 text-left text-sm font-medium hover:text-secondary"
           >
-            <AlertTriangle className="h-3 w-3" /> May not fit
+            <ChevronDown
+              aria-hidden="true"
+              className={cx("h-3.5 w-3.5 shrink-0 text-fg-muted transition-transform", open && "rotate-180")}
+            />
+            <span className="truncate">{model.name}</span>
+          </button>
+        </div>
+        <div className={cx(cell, "hidden text-sm text-fg-muted lg:flex")}>
+          <span className="truncate">{ENGINE_LABELS[model.engine] ?? model.engine}</span>
+        </div>
+        <div className={cx(cell, "hidden text-sm text-fg-muted xl:flex")}>
+          <span className="truncate" title={languageNames(model.languages)}>
+            {languageNames(model.languages)}
           </span>
-        )}
-        {model.engine === "nvidia-nim" && (
-          <span
-            className="flex items-center gap-1 rounded-full bg-accent-pale px-2 py-0.5 text-xs text-accent"
-            title="This model runs in NVIDIA's cloud, not on this device"
-          >
-            <Cloud className="h-3 w-3" /> Cloud call
-          </span>
-        )}
+        </div>
+        <div className={cx(cell, "text-sm text-fg-muted tabular-nums")}>{sizeLabel(model)}</div>
+        <div className={cell}>
+          <FitChip model={model} />
+        </div>
+        <div className={cx(cell, "justify-end")}>
+          <ModelActionCell model={model} job={job} />
+        </div>
       </div>
+      {open && (
+        <div id={detailId} className="flex flex-wrap gap-x-8 gap-y-3 px-4 pt-1 pb-4 pl-[38px]">
+          <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-1.5">
+            <p className="max-w-[70ch] text-sm leading-relaxed text-fg-muted">{model.description}</p>
+            <p className="text-[13px] text-fg-muted">
+              {languageNames(model.languages)} · needs about {formatGb(model.approx_ram_mb / 1024)} RAM
+              {isCloud(model) && " · runs in NVIDIA's cloud"}
+            </p>
+            {!model.fit.fits && <p className="text-[13px] text-warning">{model.fit.reasons.join("; ")}</p>}
+          </div>
+          <div className="flex-[1_1_300px]">
+            <ModelSetupPanel model={model} job={job} />
+          </div>
+        </div>
+      )}
+      {!open && job.error && <p className="px-4 pb-3 pl-[38px] text-xs text-danger">{job.error}</p>}
+    </li>
+  );
+}
 
-      <div className="mt-auto">
-        <ModelActions model={model} onChanged={onChanged} />
+function DefaultModelCard({ models }: { models: ModelInfo[] }) {
+  const { settings, updateSettings } = useApp();
+  const model = models.find((m) => m.id === settings?.default_model_id) ?? null;
+  const suggestion = !model ? models.find((m) => m.status === "ready") : undefined;
+
+  if (!model) {
+    return (
+      <Card tone="primary-muted" className="flex min-h-[140px] flex-col justify-between gap-3 px-5 pt-4 pb-[18px]">
+        <div className="flex items-center justify-between">
+          <Chip>No default yet</Chip>
+        </div>
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <p className="max-w-[46ch] text-sm text-on-light-muted">
+            The default is picked first whenever you read a file.{" "}
+            {suggestion ? "" : "Install a model below, then choose Use as default."}
+          </p>
+          {suggestion && (
+            <Button
+              size="sm"
+              variant="ink"
+              icon={Check}
+              onClick={() => void updateSettings({ default_model_id: suggestion.id })}
+            >
+              Use {suggestion.name}
+            </Button>
+          )}
+        </div>
+      </Card>
+    );
+  }
+
+  const ready = model.status === "ready";
+  return (
+    <Card tone="primary-muted" className="flex min-h-[140px] flex-col justify-between gap-3 px-5 pt-4 pb-[18px]">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          <Chip>{ready ? `Installed · ${sizeLabel(model)}` : "Not installed"}</Chip>
+          <Chip>Used for every file</Chip>
+        </div>
+        <IconAction icon={Check} label="This is the default model" />
       </div>
-    </div>
+      <div className="flex flex-col gap-1">
+        <h3 className="font-heading text-[clamp(26px,2.6vw,34px)] leading-[1.1] font-semibold tracking-[-0.6px]">
+          {model.name}
+        </h3>
+        {!ready && (
+          <p className="text-sm text-on-light-muted">Install it again from the library below to read with it.</p>
+        )}
+      </div>
+    </Card>
   );
 }
 
 export function ModelsView() {
+  const { caps, navigate, revision, bump } = useApp();
   const [models, setModels] = useState<ModelInfo[]>([]);
+  const [storage, setStorage] = useState<StorageInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [query, setQuery] = useState("");
-  const [engineFilter, setEngineFilter] = useState<string | null>(null);
+  const [engineFilter, setEngineFilter] = useState("");
+  const [folderError, setFolderError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
     setError(null);
     try {
-      setModels(await api.listModels());
+      const [list, info] = await Promise.all([api.listModels(), api.engineStorage().catch(() => null)]);
+      setModels(list);
+      setStorage(info);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      setLoaded(true);
     }
   }, []);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, revision]);
 
-  const engines = useMemo(
-    () => Array.from(new Set(models.map((m) => m.engine))).sort(),
-    [models],
-  );
+  const engines = useMemo(() => Array.from(new Set(models.map((m) => m.engine))), [models]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -102,84 +173,115 @@ export function ModelsView() {
       return (
         m.name.toLowerCase().includes(q) ||
         m.description.toLowerCase().includes(q) ||
-        m.languages.some((lang) => lang.toLowerCase().includes(q))
+        languageNames(m.languages).toLowerCase().includes(q)
       );
     });
   }, [models, query, engineFilter]);
 
+  // The revision bump refetches this view (effect above) and the hero's numbers.
+  const onChanged = bump;
+
+  const openFolder = async () => {
+    setFolderError(null);
+    try {
+      await api.openModelsFolder();
+    } catch (err) {
+      setFolderError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const header = "flex items-center px-4 text-xs font-medium tracking-[0.3px] text-fg-muted";
+
   return (
-    <div>
-      <div className="mb-6 flex items-center justify-between">
-        <p className="max-w-lg text-sm text-text-muted">
-          Every model DocBox can set up. One click installs whatever it needs; models
-          that suit this device's RAM and disk are marked as a good fit.
-        </p>
-        <button
-          type="button"
-          onClick={() => void refresh()}
-          disabled={loading}
-          className="flex items-center gap-2 rounded-full border border-border px-4 py-2 text-sm font-medium text-text hover:bg-panel-2 disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
+    <div className="flex flex-col gap-4">
+      {error && <Notice>Couldn't reach DocBox's engine: {error}</Notice>}
+
+      <div className="flex flex-wrap items-end gap-4">
+        <section aria-labelledby="default-label" className="flex min-w-0 flex-[1_1_440px] flex-col gap-2.5">
+          <SectionLabel id="default-label">Default model</SectionLabel>
+          <DefaultModelCard models={models} />
+        </section>
+        <section aria-labelledby="storage-label" className="flex min-w-0 flex-[0_1_580px] flex-col gap-2.5 max-[1180px]:flex-[1_1_440px]">
+          <SectionLabel id="storage-label">Storage</SectionLabel>
+          <div className="grid grid-cols-2 gap-3">
+            <StatCard
+              label="Models on disk"
+              value={storage ? formatBytes(storage.models_bytes) : "…"}
+              action={<IconAction icon={FolderOpen} label="Show the models folder" tone="light" onClick={() => void openFolder()} />}
+              className="min-h-[140px]"
+            />
+            <StatCard
+              label="Room for more"
+              value={caps ? formatGb(caps.disk_free_gb) : "…"}
+              action={<IconAction icon={Ellipsis} label="Device details" tone="light" onClick={() => navigate("device")} />}
+              className="min-h-[140px]"
+            />
+          </div>
+          {folderError && <p className="text-xs text-danger">{folderError}</p>}
+        </section>
       </div>
 
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <div className="flex min-w-[220px] flex-1 items-center gap-2 rounded-full border border-border bg-panel px-4 py-2">
-          <Search className="h-4 w-4 text-text-muted" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search models or languages…"
-            className="w-full bg-transparent text-sm outline-none placeholder:text-text-muted"
-          />
+      <section aria-labelledby="library-label" className="flex flex-col gap-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <SectionLabel id="library-label">Model library</SectionLabel>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex h-9 w-64 items-center gap-2 rounded-xl bg-surface px-3 ring-1 ring-line ring-inset focus-within:ring-secondary">
+              <Search aria-hidden="true" className="h-4 w-4 text-fg-muted" />
+              <span className="sr-only">Search models or languages</span>
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search models or languages…"
+                className="w-full bg-transparent text-sm outline-none placeholder:text-fg-muted focus-visible:outline-none"
+              />
+            </label>
+            <label className="relative">
+              <span className="sr-only">Engine</span>
+              <select
+                value={engineFilter}
+                onChange={(e) => setEngineFilter(e.target.value)}
+                className="h-9 appearance-none rounded-xl bg-surface pr-9 pl-3 text-sm ring-1 ring-line ring-inset outline-none focus:ring-secondary"
+              >
+                <option value="">All engines</option>
+                {engines.map((engine) => (
+                  <option key={engine} value={engine}>
+                    {ENGINE_LABELS[engine] ?? engine}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown aria-hidden="true" className="pointer-events-none absolute top-2.5 right-3 h-4 w-4 text-fg-muted" />
+            </label>
+          </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => setEngineFilter(null)}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-              engineFilter === null
-                ? "bg-accent text-white"
-                : "border border-border text-text-muted hover:bg-panel-2"
-            }`}
-          >
-            All
-          </button>
-          {engines.map((engine) => (
-            <button
-              key={engine}
-              type="button"
-              onClick={() => setEngineFilter(engine === engineFilter ? null : engine)}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                engineFilter === engine
-                  ? "bg-accent text-white"
-                  : "border border-border text-text-muted hover:bg-panel-2"
-              }`}
-            >
-              {ENGINE_LABELS[engine] ?? engine}
-            </button>
-          ))}
-        </div>
-      </div>
 
-      {error && (
-        <div className="mb-6 flex items-center gap-2 rounded-xl border border-warn/30 bg-warn-bg px-4 py-3 text-sm text-warn">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
-          Could not reach backend: {error}
-        </div>
-      )}
+        <Card className="overflow-hidden">
+          <div className={cx(ROW_GRID, "h-9 border-b border-line")} aria-hidden="true">
+            <div className={header}>Model</div>
+            <div className={cx(header, "hidden lg:flex")}>Engine</div>
+            <div className={cx(header, "hidden xl:flex")}>Languages</div>
+            <div className={header}>Size</div>
+            <div className={header}>On this computer</div>
+            <div className={header} />
+          </div>
+          {!loaded ? (
+            <div className="flex justify-center py-10 text-fg-muted">
+              <Spinner className="h-6 w-6" />
+            </div>
+          ) : filtered.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-fg-muted">
+              {models.length === 0 ? "No models to show." : "No models match your search."}
+            </p>
+          ) : (
+            <ul aria-label="Models">
+              {filtered.map((m, i) => (
+                <LibraryRow key={m.id} model={m} onChanged={onChanged} last={i === filtered.length - 1} />
+              ))}
+            </ul>
+          )}
+        </Card>
+      </section>
 
-      {!error && filtered.length === 0 && (
-        <p className="text-sm text-text-muted">No models match your search.</p>
-      )}
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {filtered.map((m) => (
-          <ModelCard key={m.id} model={m} onChanged={() => void refresh()} />
-        ))}
-      </div>
+      {storage && <StoragePanel info={storage} onChanged={onChanged} />}
     </div>
   );
 }

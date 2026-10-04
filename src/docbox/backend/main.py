@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,17 +21,33 @@ from docbox.backend.api import (
 from docbox.backend.core import history
 from docbox.backend.schemas import HealthStatus
 
+# Tauri 2's webview origin: tauri://localhost on Linux/macOS, http://tauri.localhost on
+# Windows. Plus the Vite dev server for `npm run dev`.
+_APP_ORIGINS = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+]
+
+
+def _allowed_origins() -> list[str]:
+    # DOCBOX_CORS_ORIGINS (comma-separated) adds origins, e.g. a client served elsewhere
+    # that talks to the Docker backend.
+    extra = os.environ.get("DOCBOX_CORS_ORIGINS", "")
+    return _APP_ORIGINS + [o.strip() for o in extra.split(",") if o.strip()]
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title="DocBox Backend", version="0.1.0")
 
-    # This server only ever listens on 127.0.0.1 and serves a single local desktop
-    # app (Tauri webview origins like http://localhost:1420 in dev or
-    # http://tauri.localhost in a built app) -- there's no third-party origin or
-    # credential exposure to guard against, so a permissive policy is fine here.
+    # This server only listens on 127.0.0.1, but a web page in the user's browser can
+    # still reach loopback. The read history holds the text of the user's documents, so
+    # only the app's own webview (and the Vite dev server) may read responses.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=_allowed_origins(),
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, Copy, ExternalLink, Loader2, Play, RefreshCw, Wrench } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Play, RefreshCw, Wrench } from "lucide-react";
 import { api, type PrerequisiteInfo } from "../lib/api";
+import { Button, Card, ProgressBar, Spinner } from "./ui";
 
 // Guided setup for an external program an engine needs (Ollama, Tesseract): one-click
 // install on Windows (winget, with its own UAC prompt), copyable commands elsewhere,
@@ -90,103 +91,95 @@ export function PrerequisiteCard({ id, onReady }: { id: string; onReady?: () => 
 
   if (!info) {
     return (
-      <div className="rounded-xl border border-border bg-panel-2 px-4 py-3 text-sm text-text-muted">
-        {error ?? "Checking…"}
-      </div>
+      <Card className="flex items-center gap-2 px-4 py-3 text-sm text-fg-muted">
+        {error ?? (
+          <>
+            <Spinner /> Checking…
+          </>
+        )}
+      </Card>
     );
   }
 
   if (info.state === "ready") {
     return (
-      <div className="flex items-center gap-2 rounded-xl border border-border bg-panel-2 px-4 py-3 text-sm">
-        <CheckCircle2 className="h-4 w-4 text-accent" />
+      <Card className="flex items-center gap-2 px-4 py-3 text-sm">
+        <Check aria-hidden="true" className="h-4 w-4 text-secondary" />
         {info.id === "ollama" ? `${info.name} is installed and running.` : `${info.name} is installed.`}
-      </div>
+      </Card>
     );
   }
 
   return (
-    <div className="rounded-xl border border-ink bg-panel-2 px-4 py-4">
-      <div className="mb-1 flex items-center gap-2 font-medium">
-        <Wrench className="h-4 w-4 text-accent" />
-        {info.state === "installed" ? `${info.name} isn't running` : `${info.name} is needed`}
+    <Card className="flex flex-col gap-3 px-4 py-4">
+      <div>
+        <div className="mb-1 flex items-center gap-2 font-medium">
+          <Wrench aria-hidden="true" className="h-4 w-4 text-warning" />
+          {info.state === "installed" ? `${info.name} isn't running` : `${info.name} is needed`}
+        </div>
+        <p className="text-sm leading-relaxed text-fg-muted">{info.about}</p>
       </div>
-      <p className="mb-3 text-sm text-text-muted">{info.about}</p>
 
       {installing ? (
-        <div>
-          <div className="h-2 w-full overflow-hidden rounded-full bg-panel">
-            <div
-              className="h-full rounded-full bg-accent transition-all"
-              style={{ width: `${Math.max(4, progress)}%` }}
-            />
-          </div>
-          <div className="mt-2 flex items-center gap-1.5 text-xs text-text-muted">
-            <Loader2 className="h-3 w-3 animate-spin" />
+        <div className="flex flex-col gap-1.5">
+          <ProgressBar value={progress} label={`Installing ${info.name}`} />
+          <div className="flex items-center gap-1.5 text-xs text-fg-muted">
+            <Spinner />
             <span className="truncate">{message ?? "Installing…"}</span>
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {info.can_start && (
-            <button
-              type="button"
-              onClick={() => void start()}
-              className="flex w-fit items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white"
+          <div className="flex flex-wrap gap-2">
+            {info.can_start && (
+              <Button size="sm" icon={Play} onClick={() => void start()}>
+                Start {info.name}
+              </Button>
+            )}
+            {info.can_auto_install && (
+              <Button size="sm" icon={Download} onClick={() => void install()}>
+                Install {info.name} for me
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="outline"
+              icon={checking ? undefined : RefreshCw}
+              disabled={checking}
+              onClick={() => void check()}
             >
-              <Play className="h-3.5 w-3.5" /> Start {info.name}
-            </button>
-          )}
-          {info.can_auto_install && (
-            <button
-              type="button"
-              onClick={() => void install()}
-              className="flex w-fit items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white"
-            >
-              Install {info.name} for me
-            </button>
-          )}
+              {checking && <Spinner />}
+              Check again
+            </Button>
+          </div>
           {info.state === "missing" && (
             <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-text-muted">
+              <span className="text-xs text-fg-muted">
                 {info.can_auto_install ? "Or run this yourself:" : "Run this in a terminal:"}
               </span>
               {info.commands.map((cmd) => (
                 <div key={cmd} className="flex items-center gap-2">
-                  <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded bg-bg px-2 py-1.5 text-xs">
+                  <code className="min-w-0 flex-1 overflow-x-auto rounded-lg bg-ink px-2.5 py-1.5 text-xs whitespace-nowrap">
                     {cmd}
                   </code>
-                  <button
-                    type="button"
-                    onClick={() => void copy(cmd)}
-                    aria-label={`Copy command: ${cmd}`}
-                    className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-text-muted hover:bg-panel"
-                  >
-                    <Copy className="h-3 w-3" /> {copied === cmd ? "Copied" : "Copy"}
-                  </button>
+                  <Button size="sm" variant="ghost" icon={Copy} aria-label={`Copy command: ${cmd}`} onClick={() => void copy(cmd)}>
+                    {copied === cmd ? "Copied" : "Copy"}
+                  </Button>
                 </div>
               ))}
               <a
                 href={info.download_url}
                 target="_blank"
                 rel="noreferrer"
-                className="flex w-fit items-center gap-1 text-xs text-text-muted hover:text-text"
+                className="flex w-fit items-center gap-1 text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
               >
-                Or download it from the official site <ExternalLink className="h-3 w-3" />
+                Or download it from the official site <ExternalLink aria-hidden="true" className="h-3 w-3" />
               </a>
             </div>
           )}
-          <button
-            type="button"
-            onClick={() => void check()}
-            disabled={checking}
-            className="flex w-fit items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-sm text-text hover:bg-panel disabled:opacity-50"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${checking ? "animate-spin" : ""}`} /> Check again
-          </button>
         </div>
       )}
-      {error && <p className="mt-2 text-xs text-warn">{error}</p>}
-    </div>
+      {error && <p className="text-xs text-danger">{error}</p>}
+    </Card>
   );
 }
