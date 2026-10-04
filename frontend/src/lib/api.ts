@@ -246,6 +246,8 @@ export const api = {
   listReads: () => request<ReadSummary[]>("/api/reads"),
   getRead: (id: string) => request<ReadDetail>(`/api/reads/${id}`),
   deleteRead: (id: string) => request<void>(`/api/reads/${id}`, { method: "DELETE" }),
+  // A plain URL (for <a download>), resolved against the backend like every request.
+  readFileUrl: async (id: string) => `${await getBaseUrl()}/api/reads/${id}/file`,
   openRead: (id: string, target: "file" | "folder") =>
     request<void>(`/api/reads/${id}/open?target=${target}`, { method: "POST" }),
 };

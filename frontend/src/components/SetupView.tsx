@@ -5,7 +5,7 @@ import {
   ArrowRight,
   Check,
   Download,
-  Ellipsis,
+  ArrowUpRight,
   Loader,
   Pause,
   Play,
@@ -31,6 +31,7 @@ import { PrerequisiteCard } from "./PrerequisiteCard";
 import {
   Button,
   Card,
+  CardButton,
   Chip,
   IconAction,
   Notice,
@@ -81,21 +82,18 @@ function EngineCard({
   const name = ENGINE_LABELS[engine] ?? engine;
   const icon = state === "ready" ? Check : state === "needs" ? ArrowDownRight : state === "checking" ? Loader : Plus;
   return (
-    <button
-      type="button"
+    <CardButton
       onClick={onOpen}
-      aria-label={`${name}: ${label}`}
-      className="group flex min-h-[150px] min-w-[150px] flex-1 text-left"
-    >
-      <StatCard
-        tone={look.tone}
-        label={label}
-        value={name}
-        valueSize="md"
-        action={<IconAction icon={icon} label="" tone={look.action} spin={state === "checking"} />}
-        className="w-full transition-[filter] group-hover:brightness-110"
-      />
-    </button>
+      aria-label={`${name}: ${label}. Show versions`}
+      tone={look.tone}
+      label={label}
+      value={name}
+      valueSize="md"
+      icon={icon}
+      iconTone={look.action}
+      spin={state === "checking"}
+      className="min-h-[150px] min-w-[150px] flex-1"
+    />
   );
 }
 
@@ -118,9 +116,10 @@ function RecommendedCard({ model, onChanged }: { model: ModelInfo; onChanged: ()
   } else if (job.phase === "paused") {
     action = <IconAction icon={Play} label="Resume" onClick={() => void job.start()} />;
   } else if (ready) {
-    action = <IconAction icon={Check} label="Ready" />;
+    action = <IconAction icon={Check} label="Installed" />;
   } else {
-    action = <IconAction icon={Download} label={`Install ${model.name}`} onClick={() => void job.start()} />;
+    // The labelled Install button below is the one way to start; no second control here.
+    action = null;
   }
 
   return (
@@ -145,7 +144,7 @@ function RecommendedCard({ model, onChanged }: { model: ModelInfo; onChanged: ()
               {busy && <Spinner />}
               <span className="truncate">
                 {job.phase === "paused"
-                  ? "Paused · press play to pick up where it stopped"
+                  ? "Paused · press resume to pick up where it stopped"
                   : job.phase === "pausing"
                     ? "Pausing after the current step…"
                     : (job.message ?? "Working…")}
@@ -177,18 +176,23 @@ function RecommendedCard({ model, onChanged }: { model: ModelInfo; onChanged: ()
 
 function DeviceCards({ engineReady }: { engineReady: (engine: string) => boolean }) {
   const { caps, settings, updateSettings, navigate } = useApp();
-  const details = <IconAction icon={Ellipsis} label="Device details" tone="light" onClick={() => navigate("device")} />;
   const cloud = settings?.cloud_enabled ?? false;
+  const device = (label: string, value: string, title?: string) => (
+    <CardButton
+      onClick={() => navigate("device")}
+      aria-label={`${label}: ${value}. Open This device`}
+      label={label}
+      value={value}
+      valueTitle={title}
+      icon={ArrowUpRight}
+      className="min-h-[102px]"
+    />
+  );
   return (
     <div className="grid grid-cols-2 gap-3">
-      <StatCard label="Memory" value={caps ? formatGb(caps.ram_total_gb) : "…"} action={details} className="min-h-[102px]" />
-      <StatCard label="Disk" value={caps ? formatGb(caps.disk_free_gb) : "…"} action={details} className="min-h-[102px]" />
-      <StatCard
-        label="Graphics"
-        value={caps?.gpu_name ? shortGpu(caps.gpu_name) : "CPU only"}
-        action={details}
-        className="min-h-[102px]"
-      />
+      {device("Memory", caps ? formatGb(caps.ram_total_gb) : "…")}
+      {device("Disk free", caps ? formatGb(caps.disk_free_gb) : "…")}
+      {device("Graphics", caps?.gpu_name ? shortGpu(caps.gpu_name) : "CPU only", caps?.gpu_name ?? undefined)}
       <StatCard
         tone="grey"
         label="NVIDIA cloud engine"
@@ -281,7 +285,8 @@ function EngineDetail({
                         aria-pressed={isSelected}
                         onClick={() => setSelectedId(v.id)}
                         className={cx(
-                          "flex min-h-14 w-full items-center gap-3 px-4 text-left transition-colors",
+                          // The list's card clips (rounded corners), so keep the focus ring inside.
+                          "flex min-h-14 w-full items-center gap-3 px-4 text-left transition-colors focus-visible:outline-offset-[-2px]",
                           isSelected ? "bg-line/70" : "hover:bg-line/40",
                         )}
                       >

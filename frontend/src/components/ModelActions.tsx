@@ -15,13 +15,14 @@ export function sizeLabel(model: ModelInfo): string {
   return isCloud(model) ? "Cloud" : formatMb(model.approx_download_mb);
 }
 
-// What a model needs before it can run, in a few words; null when it's ready.
-export function needsLabel(model: ModelInfo): string | null {
+// The button for a model that needs something set up under Connections first, named for
+// what clicking it lets you do; null when nothing outside DocBox is missing.
+export function setupActionLabel(model: ModelInfo): string | null {
   if (model.status === "ready") return null;
   if (model.status === "needs_prerequisite") {
-    return `Needs ${PREREQUISITE_LABELS[model.prerequisite ?? ""] ?? model.prerequisite}`;
+    return `Set up ${PREREQUISITE_LABELS[model.prerequisite ?? ""] ?? model.prerequisite}`;
   }
-  if (isCloud(model)) return "Needs a key";
+  if (isCloud(model)) return "Add a key";
   return null;
 }
 
@@ -56,16 +57,16 @@ export function ModelActionCell({ model, job }: { model: ModelInfo; job: ModelJo
   }
   if (model.status === "ready") {
     return (
-      <span className="flex h-8 items-center gap-[5px] px-3 text-[13px] font-medium text-secondary">
+      <span className="flex items-center gap-[5px] text-[13px] font-medium text-secondary">
         <Check aria-hidden="true" className="h-3.5 w-3.5" /> {isCloud(model) ? "Connected" : "Installed"}
       </span>
     );
   }
-  const needs = needsLabel(model);
-  if (needs) {
+  const setup = setupActionLabel(model);
+  if (setup) {
     return (
-      <Button size="sm" variant="muted" onClick={() => navigate("platforms")} title="Set it up under Connections">
-        {needs}
+      <Button size="sm" variant="muted" onClick={() => navigate("platforms")} title="Opens Connections">
+        {setup}
       </Button>
     );
   }
@@ -170,9 +171,9 @@ export function ModelSetupPanel({
             </>
           )}
           {job.phase === "idle" && model.status !== "ready" && (
-            needsLabel(model) ? (
-              <Button size="sm" variant={light ? "ink" : "muted"} onClick={() => navigate("platforms")}>
-                {needsLabel(model)}
+            setupActionLabel(model) ? (
+              <Button size="sm" variant={light ? "ink" : "muted"} onClick={() => navigate("platforms")} title="Opens Connections">
+                {setupActionLabel(model)}
               </Button>
             ) : (
               <Button
