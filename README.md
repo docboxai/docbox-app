@@ -43,6 +43,7 @@ computer unless you choose the optional NVIDIA cloud engine.
 - [Development](#development)
 - [Releasing](#releasing)
 - [Running the backend in Docker](#running-the-backend-in-docker)
+- [License](#license)
 
 ## Install
 
@@ -290,3 +291,10 @@ design/logos/         logo concepts and icon sets
 docs/screenshots/     README screenshots
 .github/workflows/    CI and release pipelines
 ```
+
+## License
+
+Copyright 2026 DocBox AI team (Pranav and Pawan).
+
+DocBox is licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE)
+for attribution, including the third-party font the searchable-PDF writer embeds.
