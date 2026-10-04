@@ -1,169 +1,197 @@
-import { useCallback, useState } from "react";
-import { CheckCircle2, Download, Loader2, PackagePlus, Trash2 } from "lucide-react";
-import { api, type ModelInfo } from "../lib/api";
+import { useState } from "react";
+import { Check, Download, PackagePlus, Pause, Play, Star, Trash2 } from "lucide-react";
+import type { ModelInfo } from "../lib/api";
+import { useApp } from "../lib/app";
 import { PREREQUISITE_LABELS } from "../lib/engineMeta";
+import { formatMb } from "../lib/format";
+import type { ModelJob } from "../lib/useModelJob";
+import { Button, ProgressBar, Spinner, cx } from "./ui";
 
-// The single control for a model: one button that says what a click will do (download,
-// or install the engine first), live progress for the whole job, and Remove with an
-// inline confirm. Shared by the Setup and Models views.
-export function ModelActions({ model, onChanged }: { model: ModelInfo; onChanged: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const [removing, setRemoving] = useState(false);
+export function isCloud(model: ModelInfo): boolean {
+  return model.engine === "nvidia-nim";
+}
 
-  const isCloud = model.engine === "nvidia-nim";
-  const isOllama = model.engine === "ollama";
+export function sizeLabel(model: ModelInfo): string {
+  return isCloud(model) ? "Cloud" : formatMb(model.approx_download_mb);
+}
 
-  const start = useCallback(async () => {
-    setBusy(true);
-    setError(null);
-    setProgress(0);
-    setMessage(null);
-    try {
-      const { job_id } = await api.startDownload(model.id);
-      // eslint-disable-next-line no-constant-condition
-      while (true) {
-        const status = await api.downloadStatus(model.id, job_id);
-        setProgress(status.progress_pct ?? 0);
-        setMessage(
-          status.state === "installing"
-            ? `Installing engine · ${status.message ?? ""}`
-            : status.message,
-        );
-        if (status.state === "done") break;
-        if (status.state === "error") {
-          setError(status.message ?? "Setup failed");
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 1000));
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-      onChanged();
-    }
-  }, [model.id, onChanged]);
+// What a model needs before it can run, in a few words; null when it's ready.
+export function needsLabel(model: ModelInfo): string | null {
+  if (model.status === "ready") return null;
+  if (model.status === "needs_prerequisite") {
+    return `Needs ${PREREQUISITE_LABELS[model.prerequisite ?? ""] ?? model.prerequisite}`;
+  }
+  if (isCloud(model)) return "Needs a key";
+  return null;
+}
 
-  const remove = useCallback(async () => {
-    setRemoving(true);
-    setError(null);
-    try {
-      await api.deleteModel(model.id);
-      setConfirmRemove(false);
-      onChanged();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setRemoving(false);
-    }
-  }, [model.id, onChanged]);
+// The compact control for a table row: Install / progress + Pause / Resume / Installed.
+export function ModelActionCell({ model, job }: { model: ModelInfo; job: ModelJob }) {
+  const { navigate } = useApp();
 
-  if (busy) {
+  if (job.phase === "running" || job.phase === "pausing") {
     return (
-      <div>
-        <div
-          className="h-2 w-full overflow-hidden rounded-full bg-panel-2"
-          role="progressbar"
-          aria-valuenow={Math.round(progress)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-label={`Setting up ${model.name}`}
-        >
-          <div
-            className="h-full rounded-full bg-accent transition-all"
-            style={{ width: `${Math.max(4, progress)}%` }}
-          />
-        </div>
-        <div className="mt-2 flex items-center gap-1.5 text-xs text-text-muted">
-          <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
-          <span className="truncate">{message ?? "working…"}</span>
-          <span className="ml-auto tabular-nums">{Math.round(progress)}%</span>
-        </div>
-      </div>
+      <span className="flex items-center gap-2 text-[13px] text-fg-muted tabular-nums">
+        <Spinner className="text-secondary" />
+        {Math.round(job.progress)}%
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={Pause}
+          aria-label={`Pause setting up ${model.name}`}
+          title={job.phase === "pausing" ? "Pausing after the current step" : "Pause"}
+          disabled={job.phase === "pausing"}
+          onClick={() => void job.pause()}
+         
+        />
+      </span>
     );
   }
+  if (job.phase === "paused") {
+    return (
+      <Button size="sm" variant="outline" icon={Play} onClick={() => void job.start()}>
+        Resume · {Math.round(job.progress)}%
+      </Button>
+    );
+  }
+  if (model.status === "ready") {
+    return (
+      <span className="flex h-8 items-center gap-[5px] px-3 text-[13px] font-medium text-secondary">
+        <Check aria-hidden="true" className="h-3.5 w-3.5" /> {isCloud(model) ? "Connected" : "Installed"}
+      </span>
+    );
+  }
+  const needs = needsLabel(model);
+  if (needs) {
+    return (
+      <Button size="sm" variant="muted" onClick={() => navigate("platforms")} title="Set it up under Connections">
+        {needs}
+      </Button>
+    );
+  }
+  return (
+    <Button
+      size="sm"
+      icon={model.status === "needs_engine" ? PackagePlus : Download}
+      title={model.status === "needs_engine" ? "Installs this engine once, then the model" : undefined}
+      onClick={() => void job.start()}
+    >
+      {model.engine === "ollama" ? "Pull" : "Install"}
+    </Button>
+  );
+}
 
-  const size = isCloud ? "cloud, nothing to store" : `~${model.approx_download_mb} MB`;
+// The full control: progress with its message, the main action, Remove (with an inline
+// confirm) and Use as default. `light` is for purple/blue cards.
+export function ModelSetupPanel({
+  model,
+  job,
+  light = false,
+}: {
+  model: ModelInfo;
+  job: ModelJob;
+  light?: boolean;
+}) {
+  const { settings, updateSettings, navigate } = useApp();
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const muted = light ? "text-on-light-muted" : "text-fg-muted";
+  const isDefault = settings?.default_model_id === model.id;
+  const busy = job.phase === "running" || job.phase === "pausing";
 
   return (
-    <div>
+    <div className="flex flex-col gap-3">
+      {(busy || job.phase === "paused") && (
+        <div className="flex flex-col gap-1.5">
+          <ProgressBar value={job.progress} label={`Setting up ${model.name}`} light={light} />
+          <div className={cx("flex items-center gap-1.5 text-xs", light ? "text-on-light" : "text-fg")}>
+            {busy && <Spinner />}
+            <span className="truncate">
+              {job.phase === "paused"
+                ? "Paused"
+                : job.phase === "pausing"
+                  ? "Pausing after the current step…"
+                  : (job.message ?? "Working…")}
+            </span>
+            <span className="ml-auto tabular-nums">{Math.round(job.progress)}%</span>
+          </div>
+        </div>
+      )}
+
       {confirmRemove ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ink px-3 py-2">
-          <span className="flex-1 text-sm">
+        <div className={cx("flex flex-wrap items-center gap-2 rounded-xl px-3 py-2", light ? "bg-ink/10" : "bg-line/60")}>
+          <span className="min-w-0 flex-1 text-sm">
             Remove this model?{" "}
-            {!isOllama && `Frees about ${model.approx_download_mb} MB.`}
-            {isOllama && "Ollama deletes it from its own store."}
+            {model.engine === "ollama"
+              ? "Ollama deletes it from its own store."
+              : `Frees about ${formatMb(model.approx_download_mb)}.`}
           </span>
-          <button
-            type="button"
-            onClick={() => void remove()}
-            disabled={removing}
-            className="rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {removing ? "Removing…" : "Remove"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setConfirmRemove(false)}
-            className="rounded-full border border-border px-3 py-1.5 text-sm text-text hover:bg-panel-2"
-          >
+          <Button size="sm" variant="ink" disabled={job.removing} onClick={() => void job.remove().then((ok) => ok && setConfirmRemove(false))}>
+            {job.removing ? "Removing…" : "Remove"}
+          </Button>
+          <Button size="sm" variant={light ? "light" : "outline"} onClick={() => setConfirmRemove(false)}>
             Keep
-          </button>
+          </Button>
         </div>
       ) : (
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs text-text-muted">{size}</span>
-          {model.status === "ready" && (
-            <span className="flex items-center gap-3">
-              <span className="flex items-center gap-1 text-sm text-accent">
-                <CheckCircle2 className="h-4 w-4" /> {isCloud ? "Connected" : "Ready"}
-              </span>
-              {!isCloud && (
-                <button
-                  type="button"
-                  onClick={() => setConfirmRemove(true)}
-                  aria-label={`Remove ${model.name}`}
-                  className="flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-text-muted hover:bg-panel-2 hover:text-text"
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Remove
-                </button>
-              )}
-            </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={cx("mr-auto text-xs", muted)}>{sizeLabel(model)}</span>
+          {busy && (
+            <Button size="sm" variant={light ? "ink" : "outline"} icon={Pause} disabled={job.phase === "pausing"} onClick={() => void job.pause()}>
+              Pause
+            </Button>
           )}
-          {model.status === "needs_download" &&
-            (isCloud ? (
-              <span className="text-xs text-warn">Add an API key under Connections</span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void start()}
-                className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
+          {job.phase === "paused" && (
+            <Button size="sm" variant={light ? "ink" : "primary"} icon={Play} onClick={() => void job.start()}>
+              Resume
+            </Button>
+          )}
+          {job.phase === "idle" && model.status === "ready" && (
+            <>
+              <Button
+                size="sm"
+                variant={light ? "ink" : "outline"}
+                icon={isDefault ? Check : Star}
+                disabled={isDefault}
+                onClick={() => void updateSettings({ default_model_id: model.id })}
               >
-                <Download className="h-3.5 w-3.5" /> {isOllama ? "Pull" : "Download"}
-              </button>
-            ))}
-          {model.status === "needs_engine" && (
-            <button
-              type="button"
-              onClick={() => void start()}
-              title="Installs this engine's packages once, then downloads the model"
-              className="flex items-center gap-1.5 rounded-full bg-accent px-3 py-1.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
-            >
-              <PackagePlus className="h-3.5 w-3.5" /> Install engine + download
-            </button>
+                {isDefault ? "Default" : "Use as default"}
+              </Button>
+              {!isCloud(model) && (
+                <Button
+                  size="sm"
+                  variant={light ? "ink" : "ghost"}
+                  icon={Trash2}
+                  aria-label={`Remove ${model.name}`}
+                  onClick={() => setConfirmRemove(true)}
+                >
+                  Remove
+                </Button>
+              )}
+            </>
           )}
-          {model.status === "needs_prerequisite" && (
-            <span className="text-xs text-warn">
-              Set up {PREREQUISITE_LABELS[model.prerequisite ?? ""] ?? model.prerequisite} first
-            </span>
+          {job.phase === "idle" && model.status !== "ready" && (
+            needsLabel(model) ? (
+              <Button size="sm" variant={light ? "ink" : "muted"} onClick={() => navigate("platforms")}>
+                {needsLabel(model)}
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant={light ? "ink" : "primary"}
+                icon={model.status === "needs_engine" ? PackagePlus : Download}
+                onClick={() => void job.start()}
+              >
+                {model.status === "needs_engine"
+                  ? "Install engine + model"
+                  : model.engine === "ollama"
+                    ? "Pull"
+                    : "Install"}
+              </Button>
+            )
           )}
         </div>
       )}
-      {error && <p className="mt-2 text-xs text-warn">{error}</p>}
+      {job.error && <p className={cx("text-xs", light ? "text-on-light" : "text-danger")}>{job.error}</p>}
     </div>
   );
 }

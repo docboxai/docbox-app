@@ -55,14 +55,14 @@ export const ENGINE_CAPABILITIES: Record<string, string> = {
     "option where your images leave this computer.",
 };
 
-// One short, plain-language line per engine for the Setup cards.
+// A few words per engine for the Setup cards: what it's good at.
 export const ENGINE_BLURBS: Record<string, string> = {
-  paddleocr: "Scans, receipts, screenshots",
-  "paddleocr-vl": "Whole documents with tables",
-  tesseract: "Classic, many languages",
-  easyocr: "Good with tricky fonts",
-  ollama: "Local AI vision models",
-  "nvidia-nim": "Cloud, with your API key",
+  paddleocr: "Scans & receipts",
+  "paddleocr-vl": "Documents & tables",
+  tesseract: "Many languages",
+  easyocr: "Tricky fonts",
+  ollama: "Local AI vision",
+  "nvidia-nim": "Cloud, your own key",
 };
 
 export const PREREQUISITE_LABELS: Record<string, string> = {

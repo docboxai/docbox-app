@@ -131,6 +131,9 @@ class EngineStorage(BaseModel):
 
 class StorageInfo(BaseModel):
     data_dir: str
+    # Everything under the models dir: every engine's weights plus Tesseract's language
+    # files. Ollama keeps its models in its own store, so they aren't counted.
+    models_bytes: int
     engines: list[EngineStorage]
 
 

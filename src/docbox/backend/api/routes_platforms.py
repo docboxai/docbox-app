@@ -14,6 +14,12 @@ def list_platforms() -> list[PlatformStatus]:
     return [PlatformStatus(**s) for s in list_platform_statuses()]
 
 
+@router.get("/nvidia-nim/api-key", response_model=NvidiaApiKeyStatus)
+def nvidia_api_key_status() -> NvidiaApiKeyStatus:
+    # Whether a key is saved; the key itself never goes back to the client.
+    return NvidiaApiKeyStatus(configured=config_store.get_nvidia_api_key() is not None)
+
+
 @router.post("/nvidia-nim/api-key", response_model=NvidiaApiKeyStatus)
 def set_nvidia_api_key(body: NvidiaApiKeyRequest) -> NvidiaApiKeyStatus:
     key = body.api_key.strip()
