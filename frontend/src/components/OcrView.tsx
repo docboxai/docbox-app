@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertTriangle,
   ArrowRight,
   ArrowUpRight,
+  Ban,
   ChevronDown,
   Clipboard,
   Copy,
+  Download,
   ExternalLink,
   FileUp,
   FolderOpen,
@@ -22,6 +25,7 @@ import {
 } from "../lib/api";
 import { useApp } from "../lib/app";
 import { formatSeconds, plural } from "../lib/format";
+import { IN_TAURI, ON_BACKEND_COMPUTER } from "../lib/host";
 import {
   Button,
   Card,
@@ -80,56 +84,47 @@ function readLabel(r: ReadSummary): string {
   }
 }
 
+// One card, one action: anywhere on it (the corner arrow included) shows the read's text
+// below. File actions (open, download, show in folder) live in that panel, not here.
 function RecentCard({
   read,
   index,
   selected,
   onSelect,
-  onError,
 }: {
   read: ReadSummary;
   index: number;
   selected: boolean;
   onSelect: () => void;
-  onError: (message: string) => void;
 }) {
   const done = read.state === "done";
   const busy = read.state === "reading" || read.state === "queued";
   const tone: CardTone = done ? (index % 2 === 0 ? "primary-soft" : "primary-muted") : "surface";
 
-  const openFile = async () => {
-    try {
-      await api.openRead(read.id, "file");
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  let action;
-  if (done && read.output_path) {
-    action = <IconAction icon={ArrowUpRight} label={`Open ${read.file_name}`} onClick={() => void openFile()} />;
-  } else if (busy) {
-    action = <IconAction icon={Loader} label="" tone="hero" spin />;
-  } else {
-    action = <IconAction icon={X} label="" tone="light" />;
-  }
+  let icon;
+  if (done) icon = <IconAction icon={ArrowUpRight} label="" />;
+  else if (busy) icon = <IconAction icon={Loader} label="" tone="hero" spin />;
+  else if (read.state === "cancelled") icon = <IconAction icon={Ban} label="" tone="light" />;
+  else icon = <IconAction icon={AlertTriangle} label="" tone="light" />;
 
   return (
-    <div className={cx("relative min-w-0 rounded-2xl", selected && "ring-2 ring-secondary ring-offset-2 ring-offset-ink")}>
+    <div className={cx("group relative min-w-0 rounded-2xl", selected && "ring-2 ring-secondary ring-offset-2 ring-offset-ink")}>
       <StatCard
         tone={tone}
-        label={read.state === "error" ? <span title={read.error ?? undefined}>{readLabel(read)}</span> : readLabel(read)}
+        label={readLabel(read)}
         value={read.file_name}
+        valueTitle={read.file_name}
         valueSize="sm"
-        action={<span className="relative z-10">{action}</span>}
-        className="min-h-[124px]"
+        action={icon}
+        className="min-h-[124px] transition-[filter] group-hover:brightness-110"
       />
       <button
         type="button"
         onClick={onSelect}
         aria-pressed={selected}
         aria-label={`Show the text of ${read.file_name}: ${readLabel(read)}`}
-        className="absolute inset-0 rounded-2xl"
+        title={read.state === "error" ? (read.error ?? undefined) : undefined}
+        className="absolute inset-0 cursor-pointer rounded-2xl hover:bg-fg/5"
       />
     </div>
   );
@@ -144,9 +139,21 @@ function ResultPanel({
   onClose: () => void;
   onDeleted: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [done, setDone] = useState<"copied" | "opened" | "shown" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+
+  // A download works from any device; the desktop webview opens the file instead.
+  useEffect(() => {
+    if (IN_TAURI || !read.output_path) return;
+    void api.readFileUrl(read.id).then(setDownloadUrl);
+  }, [read.id, read.output_path]);
+
+  const flash = (what: "copied" | "opened" | "shown") => {
+    setDone(what);
+    setTimeout(() => setDone((d) => (d === what ? null : d)), 1800);
+  };
 
   const act = async (fn: () => Promise<void>) => {
     setError(null);
@@ -160,8 +167,7 @@ function ResultPanel({
   const copy = () =>
     act(async () => {
       await navigator.clipboard.writeText(read.text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      flash("copied");
     });
 
   const meta = [
@@ -176,7 +182,7 @@ function ResultPanel({
     <Card as="section" aria-label={`Text of ${read.file_name}`} className="flex flex-col">
       <div className="flex flex-wrap items-start gap-3 border-b border-line px-5 py-4">
         <div className="min-w-0 flex-1">
-          <h3 className="truncate font-heading text-[22px] leading-[1.15] font-semibold tracking-[-0.5px]">
+          <h3 className="font-heading text-[22px] leading-[1.15] font-semibold tracking-[-0.5px] break-words">
             {read.file_name}
           </h3>
           <p className="truncate text-[13px] text-fg-muted" title={read.output_path ?? undefined}>
@@ -187,25 +193,37 @@ function ResultPanel({
           {read.state === "done" && (
             <>
               <Button size="sm" variant="outline" icon={Copy} onClick={() => void copy()}>
-                {copied ? "Copied" : "Copy text"}
+                {done === "copied" ? "Copied" : "Copy text"}
               </Button>
-              {read.output_path && (
-                <>
-                  <Button size="sm" variant="outline" icon={ExternalLink} onClick={() => void act(() => api.openRead(read.id, "file"))}>
-                    Open file
-                  </Button>
-                  <Button size="sm" variant="outline" icon={FolderOpen} onClick={() => void act(() => api.openRead(read.id, "folder"))}>
-                    Show in folder
-                  </Button>
-                </>
+              {downloadUrl && (
+                <a
+                  href={downloadUrl}
+                  download
+                  className="inline-flex h-8 items-center gap-[5px] rounded-3xl px-3 text-[13px] font-medium whitespace-nowrap text-fg ring-1 ring-line ring-inset transition-colors hover:bg-line/60"
+                >
+                  <Download aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                  Download .{read.output_format}
+                </a>
+              )}
+              {read.output_path && IN_TAURI && (
+                <Button size="sm" variant="outline" icon={ExternalLink} onClick={() => void act(async () => { await api.openRead(read.id, "file"); flash("opened"); })}>
+                  {done === "opened" ? "Opened" : "Open file"}
+                </Button>
+              )}
+              {read.output_path && ON_BACKEND_COMPUTER && (
+                <Button size="sm" variant="outline" icon={FolderOpen} onClick={() => void act(async () => { await api.openRead(read.id, "folder"); flash("shown"); })}>
+                  {done === "shown" ? "Opened the folder" : "Show in folder"}
+                </Button>
               )}
             </>
           )}
           {confirmDelete ? (
             <span className="flex items-center gap-1.5 rounded-3xl bg-line/60 py-0.5 pr-0.5 pl-3 text-[13px]">
-              {read.state === "reading" || read.state === "queued" ? "Stop and forget it?" : "Forget it? The saved file stays."}
+              {read.state === "reading" || read.state === "queued"
+                ? "Stop reading and remove it from recent files?"
+                : "Remove from recent files? The saved file stays."}
               <Button size="sm" variant="light" onClick={() => void act(async () => { await api.deleteRead(read.id); onDeleted(); })}>
-                {read.state === "reading" || read.state === "queued" ? "Stop" : "Forget"}
+                {read.state === "reading" || read.state === "queued" ? "Stop and remove" : "Remove"}
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)}>
                 Keep
@@ -426,7 +444,12 @@ export function OcrView() {
       <div className="flex flex-wrap items-end gap-4">
         <section aria-labelledby="add-label" className="flex min-w-0 flex-[1_1_440px] flex-col gap-2.5">
           <SectionLabel id="add-label">Add documents</SectionLabel>
+          {/* The whole zone opens the file picker on click (a pointer shortcut; the
+              buttons inside stay the keyboard path). */}
           <div
+            onClick={(e) => {
+              if (!(e.target as HTMLElement).closest("button, a, input")) fileInputRef.current?.click();
+            }}
             onDragOver={(e) => {
               e.preventDefault();
               setDragging(true);
@@ -438,8 +461,8 @@ export function OcrView() {
               addFiles(Array.from(e.dataTransfer.files ?? []));
             }}
             className={cx(
-              "flex min-h-[262px] flex-col items-center justify-center gap-3.5 rounded-2xl p-6 text-center ring-inset transition-colors",
-              dragging ? "bg-line/70 ring-2 ring-secondary" : "bg-surface ring-1 ring-line",
+              "flex min-h-[262px] cursor-pointer flex-col items-center justify-center gap-3.5 rounded-2xl p-6 text-center ring-inset transition-colors",
+              dragging ? "bg-line/70 ring-2 ring-secondary" : "bg-surface ring-1 ring-line hover:bg-line/40",
             )}
           >
             <span aria-hidden="true" className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-primary">
@@ -455,7 +478,7 @@ export function OcrView() {
               <ul aria-label="Selected files" className="flex max-w-full flex-wrap justify-center gap-1.5">
                 {files.map((f, i) => (
                   <li key={`${f.name}-${i}`} className="flex max-w-[220px] items-center gap-1 rounded-2xl bg-line py-0.5 pr-1 pl-2.5 text-xs">
-                    <span className="truncate">{f.name}</span>
+                    <span className="truncate" title={f.name}>{f.name}</span>
                     <button
                       type="button"
                       aria-label={`Remove ${f.name}`}
@@ -527,10 +550,7 @@ export function OcrView() {
                     <ChevronDown aria-hidden="true" className="pointer-events-none absolute top-3 right-3 h-4 w-4 text-fg" />
                   </div>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[13px] font-medium text-on-light">Save the text as</span>
-                  <Tabs label="Save the text as" value={format} options={FORMATS} onChange={setFormat} />
-                </div>
+                <Tabs label="Save the text as" value={format} options={FORMATS} onChange={setFormat} />
                 <div className="flex items-center justify-between gap-3">
                   <span className="min-w-0 truncate text-[13px] text-on-light-muted" title={settings?.output_dir}>
                     {runHint}
@@ -574,7 +594,6 @@ export function OcrView() {
                 index={i}
                 selected={r.id === selectedId}
                 onSelect={() => setSelectedId(r.id === selectedId ? null : r.id)}
-                onError={setError}
               />
             ))}
           </div>

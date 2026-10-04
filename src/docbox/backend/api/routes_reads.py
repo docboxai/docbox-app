@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse
 
 from docbox.backend.core import history, reader
 from docbox.backend.core.opener import open_path
@@ -60,13 +61,28 @@ def delete_read(read_id: str) -> Response:
     return Response(status_code=204)
 
 
-@router.post("/{read_id}/open", status_code=204)
-def open_read(read_id: str, target: Literal["file", "folder"] = "file") -> Response:
+def _saved_file(read_id: str) -> Path:
     # Only paths DocBox itself recorded for this read: the client names a read, not a path.
     entry = history.get(read_id)
     if entry is None or not entry.output_path:
         raise HTTPException(status_code=404, detail="This read has no saved file")
-    path = Path(entry.output_path)
+    return Path(entry.output_path)
+
+
+@router.get("/{read_id}/file")
+def download_read(read_id: str) -> FileResponse:
+    """The saved file itself, for a browser on another device: opening it with
+    /open would show it on the computer running DocBox, not to the person asking."""
+    path = _saved_file(read_id)
+    if not path.is_file():
+        raise HTTPException(status_code=410, detail="The saved file was moved or deleted")
+    return FileResponse(path, filename=path.name)
+
+
+@router.post("/{read_id}/open", status_code=204)
+def open_read(read_id: str, target: Literal["file", "folder"] = "file") -> Response:
+    """Open the saved file (or its folder) on the computer running DocBox."""
+    path = _saved_file(read_id)
     try:
         open_path(path if target == "file" else path.parent)
     except FileNotFoundError:

@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, Ellipsis, FolderOpen, Search } from "lucide-react";
+import { ArrowUpRight, Check, ChevronDown, FolderOpen, Search } from "lucide-react";
 import { api, formatBytes, type ModelInfo, type StorageInfo } from "../lib/api";
 import { useApp } from "../lib/app";
 import { ENGINE_LABELS } from "../lib/engineMeta";
 import { formatGb } from "../lib/format";
+import { ON_BACKEND_COMPUTER } from "../lib/host";
 import { languageNames } from "../lib/languages";
 import { useModelJob } from "../lib/useModelJob";
 import { ModelActionCell, ModelSetupPanel, isCloud, sizeLabel } from "./ModelActions";
 import { StoragePanel } from "./StoragePanel";
-import { Button, Card, Chip, IconAction, Notice, SectionLabel, Spinner, StatCard, cx } from "./ui";
+import { Button, Card, CardButton, Chip, IconAction, Notice, SectionLabel, Spinner, StatCard, cx } from "./ui";
 
 // Columns drop out as the window narrows: languages first, then engine.
 const ROW_GRID =
@@ -31,7 +32,12 @@ function LibraryRow({ model, onChanged, last }: { model: ModelInfo; onChanged: (
   const cell = "flex min-w-0 items-center px-4";
   return (
     <li className={cx(!last && "border-b border-line", open && "bg-line/30")}>
-      <div className={cx(ROW_GRID, "min-h-[54px]")}>
+      <div
+        className={cx(ROW_GRID, "min-h-[54px] cursor-pointer hover:bg-line/30")}
+        onClick={(e) => {
+          if (!(e.target as HTMLElement).closest("button, a, input, select")) setOpen((o) => !o);
+        }}
+      >
         <div className={cell}>
           <button
             type="button"
@@ -145,6 +151,7 @@ export function ModelsView() {
   const [query, setQuery] = useState("");
   const [engineFilter, setEngineFilter] = useState("");
   const [folderError, setFolderError] = useState<string | null>(null);
+  const [folderOpened, setFolderOpened] = useState(false);
 
   const refresh = useCallback(async () => {
     setError(null);
@@ -185,6 +192,8 @@ export function ModelsView() {
     setFolderError(null);
     try {
       await api.openModelsFolder();
+      setFolderOpened(true);
+      setTimeout(() => setFolderOpened(false), 1800);
     } catch (err) {
       setFolderError(err instanceof Error ? err.message : String(err));
     }
@@ -204,16 +213,25 @@ export function ModelsView() {
         <section aria-labelledby="storage-label" className="flex min-w-0 flex-[0_1_580px] flex-col gap-2.5 max-[1180px]:flex-[1_1_440px]">
           <SectionLabel id="storage-label">Storage</SectionLabel>
           <div className="grid grid-cols-2 gap-3">
-            <StatCard
-              label="Models on disk"
-              value={storage ? formatBytes(storage.models_bytes) : "…"}
-              action={<IconAction icon={FolderOpen} label="Show the models folder" tone="light" onClick={() => void openFolder()} />}
-              className="min-h-[140px]"
-            />
-            <StatCard
+            {/* The folder opens on the computer running DocBox, so offer it only there. */}
+            {ON_BACKEND_COMPUTER ? (
+              <CardButton
+                onClick={() => void openFolder()}
+                aria-label="Models on disk: show the models folder"
+                label={folderOpened ? "Opened the models folder" : "Models on disk"}
+                value={storage ? formatBytes(storage.models_bytes) : "…"}
+                icon={FolderOpen}
+                className="min-h-[140px]"
+              />
+            ) : (
+              <StatCard label="Models on disk" value={storage ? formatBytes(storage.models_bytes) : "…"} className="min-h-[140px]" />
+            )}
+            <CardButton
+              onClick={() => navigate("device")}
+              aria-label="Room for more: free disk space. Open This device"
               label="Room for more"
+              icon={ArrowUpRight}
               value={caps ? formatGb(caps.disk_free_gb) : "…"}
-              action={<IconAction icon={Ellipsis} label="Device details" tone="light" onClick={() => navigate("device")} />}
               className="min-h-[140px]"
             />
           </div>

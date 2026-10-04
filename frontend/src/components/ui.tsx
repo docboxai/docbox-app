@@ -1,6 +1,6 @@
 // Building blocks from the design's component sheet (design/docboxapp.pen), shared by
 // every view: chips, round icon actions, pill buttons, the switch, cards and tabs.
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { useId, type ButtonHTMLAttributes, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
 import { AlertTriangle } from "lucide-react";
 
@@ -229,11 +229,13 @@ export function StatCard({
   action,
   sub,
   valueSize = "lg",
+  valueTitle,
   className,
 }: {
   tone?: CardTone;
   label: ReactNode;
   value: ReactNode;
+  valueTitle?: string;
   action?: ReactNode;
   sub?: ReactNode;
   valueSize?: "lg" | "md" | "sm";
@@ -253,8 +255,9 @@ export function StatCard({
       </div>
       <div className="flex min-w-0 flex-col gap-0.5">
         <span
+          title={valueTitle}
           className={cx(
-            "truncate font-heading leading-[1.1] font-semibold tracking-[-0.5px]",
+            "line-clamp-2 pb-[0.12em] font-heading leading-[1.1] font-semibold tracking-[-0.5px] break-words",
             valueSize === "lg" && "text-[30px]",
             valueSize === "md" && "text-[26px]",
             valueSize === "sm" && "text-[22px]",
@@ -272,7 +275,40 @@ export function StatCard({
   );
 }
 
-// Segmented control ("Save the text as").
+// A StatCard that is one button as a whole: the corner icon only hints where it leads.
+// Use it whenever a card navigates, so no card mixes a body action with a different
+// corner action.
+export function CardButton({
+  onClick,
+  label,
+  icon,
+  iconTone = "light",
+  spin,
+  className,
+  ...card
+}: Omit<Parameters<typeof StatCard>[0], "action" | "label"> & {
+  onClick: () => void;
+  label: ReactNode;
+  icon: LucideIcon;
+  iconTone?: ActionTone;
+  spin?: boolean;
+  "aria-label": string;
+}) {
+  const { "aria-label": ariaLabel, ...rest } = card;
+  return (
+    <button type="button" onClick={onClick} aria-label={ariaLabel} className={cx("group flex min-w-0 text-left", className)}>
+      <StatCard
+        {...rest}
+        label={label}
+        action={<IconAction icon={icon} label="" tone={iconTone} spin={spin} />}
+        className="w-full transition-[filter] group-hover:brightness-110"
+      />
+    </button>
+  );
+}
+
+// Segmented control ("Save the text as"): native radios, so arrow keys, focus and form
+// semantics come from the browser; the labels carry the look.
 export function Tabs<T extends string>({
   value,
   options,
@@ -284,27 +320,33 @@ export function Tabs<T extends string>({
   onChange: (value: T) => void;
   label: string;
 }) {
+  const name = useId();
   return (
-    <div role="radiogroup" aria-label={label} className="flex h-10 gap-0.5 rounded-[20px] bg-ink/12 p-1">
-      {options.map((o) => {
-        const active = o.value === value;
-        return (
-          <button
+    <fieldset className="flex min-w-0 flex-col gap-1.5">
+      <legend className="mb-1.5 text-[13px] font-medium text-on-light">{label}</legend>
+      <div className="flex h-10 gap-0.5 rounded-[20px] bg-ink/12 p-1">
+        {options.map((o) => (
+          <label
             key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => onChange(o.value)}
             className={cx(
-              "flex min-w-0 flex-1 items-center justify-center rounded-3xl px-3 text-sm font-medium whitespace-nowrap transition-colors",
-              active ? "bg-ink text-fg" : "text-on-light hover:bg-ink/10",
+              "flex min-w-0 flex-1 cursor-pointer items-center justify-center rounded-3xl px-3 text-sm font-medium whitespace-nowrap transition-colors",
+              "has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-secondary has-[:focus-visible]:outline-solid",
+              o.value === value ? "bg-ink text-fg" : "text-on-light hover:bg-ink/10",
             )}
           >
+            <input
+              type="radio"
+              name={name}
+              value={o.value}
+              checked={o.value === value}
+              onChange={() => onChange(o.value)}
+              className="sr-only"
+            />
             {o.label}
-          </button>
-        );
-      })}
-    </div>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 

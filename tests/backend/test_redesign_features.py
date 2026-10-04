@@ -383,3 +383,21 @@ def test_read_ids_cannot_name_paths(client: TestClient, data_dir) -> None:
 def test_markdown_single_page_has_no_page_headings() -> None:
     text = reader.render_text("a.png", [ReadPage(lines=[], text="hello")], "md")
     assert text == "# a.png\n\nhello\n"
+
+
+def test_download_serves_only_the_recorded_output(client: TestClient, data_dir, page_spec) -> None:
+    read_id = client.post(
+        "/api/reads",
+        files=[("files", ("scan.png", _png(), "image/png"))],
+        data={"model_id": "test-page-model", "output_format": "md"},
+    ).json()["reads"][0]["id"]
+    body = _wait_read(client, read_id)
+
+    resp = client.get(f"/api/reads/{read_id}/file")
+    assert resp.status_code == 200
+    assert resp.text == Path(body["output_path"]).read_text()
+    assert 'filename="scan.md"' in resp.headers["content-disposition"]
+
+    Path(body["output_path"]).unlink()
+    assert client.get(f"/api/reads/{read_id}/file").status_code == 410
+    assert client.get("/api/reads/0123/file").status_code == 404

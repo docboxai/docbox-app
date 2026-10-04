@@ -78,7 +78,10 @@ function Shell() {
 
   return (
     <Frame banner={<UpdateBanner />}>
-      <main className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto">
+      {/* A scroll container clips anything painted outside its children: focus outlines
+          (2px + 2px offset) and the selected card's ring. -m-1 p-1 gives them those 4px
+          without moving the layout. */}
+      <main className="-m-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-1">
         <Hero eyebrow={page.eyebrow} title={page.title} stat={stat} />
         <div className="shrink-0">
           {view === "setup" && <SetupView />}
