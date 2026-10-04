@@ -7,7 +7,13 @@ on:
 
 jobs:
   backend:
-    runs-on: ubuntu-22.04
+    # Windows too: most users are on it, and Windows-only bugs (CRLF, paths, locked
+    # files) don't show up on Linux.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -30,10 +36,20 @@ jobs:
       - run: npm --prefix frontend run build
 
   shell:
-    runs-on: ubuntu-22.04
+    # Windows too: main.rs has Windows-only code (process-tree kill, no console window)
+    # that a Linux build never compiles.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - name: Tauri system dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev \
