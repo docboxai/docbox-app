@@ -147,13 +147,20 @@ def run_streaming(
     tail: list[str] = []
     steps = 0
     assert proc.stdout is not None
-    for raw in proc.stdout:
-        line = raw.strip()
-        if not line:
-            continue
-        tail = (tail + [line])[-30:]
-        steps += 1
-        progress_cb(min(95.0, 100.0 * (1 - 0.93**steps)), line[:160])
+    try:
+        for raw in proc.stdout:
+            line = raw.strip()
+            if not line:
+                continue
+            tail = (tail + [line])[-30:]
+            steps += 1
+            progress_cb(min(95.0, 100.0 * (1 - 0.93**steps)), line[:160])
+    except BaseException:
+        # The callback raises to pause the job: stop the install rather than leave it
+        # running unattended. uv sync is idempotent, so the next run picks up from here.
+        proc.kill()
+        proc.wait()
+        raise
     if proc.wait() != 0:
         raise EngineInstallError(f"{failure}:\n" + "\n".join(tail))
 

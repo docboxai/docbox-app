@@ -144,9 +144,13 @@ class PaddleOcrEngine:
         for res in results:
             texts = res.get("rec_texts", [])
             scores = res.get("rec_scores", [])
+            # [x1, y1, x2, y2] per recognized line, when this paddleocr version reports it.
+            boxes = res.get("rec_boxes")
+            boxes = [] if boxes is None else list(boxes)
             for i, text in enumerate(texts):
                 confidence = float(scores[i]) if i < len(scores) else None
-                lines.append(OcrLine(text=text, confidence=confidence))
+                box = [float(v) for v in boxes[i][:4]] if i < len(boxes) else None
+                lines.append(OcrLine(text=text, confidence=confidence, box=box))
 
         return OcrResult(
             model_id=self._model_id,

@@ -7,6 +7,7 @@ models aren't registered once at import time — what's available can change any
 
 from __future__ import annotations
 
+from docbox.backend.core import config_store
 from docbox.backend.core.registry import ModelSpec, registry
 from docbox.backend.platforms import nvidia_nim, ollama
 
@@ -42,3 +43,8 @@ def resolve_spec(model_id: str) -> ModelSpec:
     if spec is None:
         raise KeyError(f"Unknown model id: {model_id}")
     return spec
+
+
+def cloud_blocked(model_id: str) -> bool:
+    """True for a cloud model while the user has the cloud engine switched off."""
+    return model_id.startswith("nvidia-nim:") and not config_store.cloud_enabled()

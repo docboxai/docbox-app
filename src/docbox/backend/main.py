@@ -14,7 +14,10 @@ from docbox.backend.api import (
     routes_ocr,
     routes_platforms,
     routes_prerequisites,
+    routes_reads,
+    routes_settings,
 )
+from docbox.backend.core import history
 from docbox.backend.schemas import HealthStatus
 
 
@@ -42,6 +45,10 @@ def create_app() -> FastAPI:
     app.include_router(routes_platforms.router)
     app.include_router(routes_prerequisites.router)
     app.include_router(routes_engines.router)
+    app.include_router(routes_reads.router)
+    app.include_router(routes_settings.router)
+
+    history.mark_interrupted()
 
     # Importing the catalog registers the concrete ModelSpec entries as a side effect.
     from docbox.backend import models_catalog  # noqa: F401
