@@ -24,18 +24,27 @@ from __future__ import annotations
 import os
 from dataclasses import replace
 
-from docbox.backend.core.registry import ModelSpec, registry
+from docbox.backend.core.registry import ModelSpec, Tier, registry
 from docbox.backend.engines.easyocr_engine import EasyOcrEngine
 from docbox.backend.engines.paddleocr_engine import PaddleOcrEngine
 from docbox.backend.engines.paddleocr_vl_engine import PaddleOcrVlEngine
 from docbox.backend.engines.remote_engine import DEFAULT_RUN_TIMEOUT_S, RemoteEngine
 from docbox.backend.engines.tesseract_engine import TesseractEngine
 
+# `quality` ranks the built-in models for everyday documents; the recommendation is the
+# best one that runs smoothly on this computer (registry.recommend). PaddleOCR's own
+# tables (docs/version3.x/module_usage/text_detection.en.md and text_recognition.en.md)
+# put PP-OCRv6 medium above PP-OCRv5 server on both detection (Hmean 86.2 vs 83.8) and
+# recognition (+5.1%), at roughly a tenth of the CPU time for detection, so "Balanced"
+# outranks "High Accuracy". Models for one language family keep quality=None.
+
 # --- PaddleOCR: mobile tier (small, fast, CPU-friendly) ---------------------------
 
 registry.register(
     ModelSpec(
         id="paddleocr-mobile-en",
+        tier=Tier.LIGHT,
+        quality=30,
         name="PaddleOCR Mobile — English",
         engine="paddleocr",
         requires_extra="paddle",
@@ -58,6 +67,8 @@ registry.register(
 registry.register(
     ModelSpec(
         id="paddleocr-mobile-ch",
+        tier=Tier.LIGHT,
+        quality=20,
         name="PaddleOCR Mobile — Chinese + English",
         engine="paddleocr",
         requires_extra="paddle",
@@ -82,12 +93,14 @@ registry.register(
 registry.register(
     ModelSpec(
         id="paddleocr-balanced",
+        tier=Tier.STANDARD,
+        quality=60,
         name="PaddleOCR Balanced — Chinese + English",
         engine="paddleocr",
         requires_extra="paddle",
         description=(
-            "Noticeably more accurate than the small versions, for Chinese and English, "
-            "at a moderate size. A good step up when results look rough."
+            "The most accurate everyday reader, for English and Chinese text, at a "
+            "moderate size and still quick."
         ),
         languages=["ch", "en"],
         approx_download_mb=90,
@@ -104,12 +117,14 @@ registry.register(
 registry.register(
     ModelSpec(
         id="paddleocr-accurate-en",
+        tier=Tier.STANDARD,
+        quality=50,
         name="PaddleOCR High Accuracy — English",
         engine="paddleocr",
         requires_extra="paddle",
         description=(
-            "Best at finding small or crowded English text, like fine print and busy "
-            "forms. Larger and a little slower than the small version."
+            "Careful at finding small or crowded English text, like fine print and busy "
+            "forms. Larger and slower than Balanced."
         ),
         languages=["en"],
         approx_download_mb=170,
@@ -138,6 +153,7 @@ for _model_id, _family_label, _rec_name, _langs in _LANGUAGE_FAMILIES:
     registry.register(
         ModelSpec(
             id=_model_id,
+            tier=Tier.STANDARD,
             name=f"PaddleOCR — {_family_label}",
             engine="paddleocr",
             requires_extra="paddle",
@@ -160,6 +176,8 @@ for _model_id, _family_label, _rec_name, _langs in _LANGUAGE_FAMILIES:
 registry.register(
     ModelSpec(
         id="paddleocr-vl",
+        tier=Tier.HEAVY,
+        quality=90,
         name="PaddleOCR-VL — whole pages",
         engine="paddleocr-vl",
         requires_extra="paddle",
@@ -179,13 +197,14 @@ registry.register(
 
 # --- Tesseract: classical engine, system-binary prerequisite ----------------------
 
-for _tess_id, _tess_lang, _tess_label in [
-    ("tesseract-eng", "eng", "English"),
-    ("tesseract-fra", "fra", "French"),
+for _tess_id, _tess_lang, _tess_label, _tess_quality in [
+    ("tesseract-eng", "eng", "English", 10),
+    ("tesseract-fra", "fra", "French", None),
 ]:
     registry.register(
         ModelSpec(
             id=_tess_id,
+            quality=_tess_quality,
             name=f"Tesseract — {_tess_label}",
             engine="tesseract",
             prerequisite="tesseract",
@@ -209,6 +228,8 @@ for _tess_id, _tess_lang, _tess_label in [
 registry.register(
     ModelSpec(
         id="easyocr-en",
+        tier=Tier.STANDARD,
+        quality=40,
         name="EasyOCR — English",
         engine="easyocr",
         requires_extra="easyocr",

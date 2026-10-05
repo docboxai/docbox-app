@@ -110,6 +110,12 @@ step for frontend changes.
   singleton.
 - `check_fit(spec, caps) -> FitResult` — compares a spec's requirements against
   `DeviceCapabilities` with a RAM safety margin (`_RAM_SAFETY_MARGIN_MB`).
+- `recommend(specs, caps)` — Setup's "Recommended start" (`ModelInfo.recommended`): the
+  highest-`quality` spec that `runs_smoothly` here, meaning the computer clears its `tier`
+  (`_TIER_NEEDS`: total RAM and physical cores), `check_fit` passes and it isn't slow
+  without a GPU. Quality wins over tier: a heavier model is picked only when it also
+  reads better. `quality=None` (the default; language specialists, Ollama, cloud) is
+  never picked, so give every new general-purpose built-in model a `tier` and `quality`.
 
 `src/docbox/backend/engines/base.py` defines the `OCREngine` Protocol every engine
 implements: `is_downloaded()`, `download(progress_cb)`, `load()`, `run(image) -> OcrResult`.

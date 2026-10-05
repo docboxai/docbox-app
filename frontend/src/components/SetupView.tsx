@@ -21,7 +21,6 @@ import {
   ENGINE_LABELS,
   ENGINE_ORDER,
   ENGINE_PREREQUISITE,
-  RECOMMENDED_MODEL_ID,
 } from "../lib/engineMeta";
 import { formatGb, shortGpu } from "../lib/format";
 import { languageNames } from "../lib/languages";
@@ -126,7 +125,7 @@ function RecommendedCard({ model, onChanged }: { model: ModelInfo; onChanged: ()
     <Card tone="secondary-soft" className="flex min-h-[216px] flex-col justify-between gap-4 px-5 pt-4 pb-5">
       <div className="flex items-center justify-between gap-2">
         <div className="flex flex-wrap gap-1.5">
-          {model.fit.fits && <Chip>Best for this computer</Chip>}
+          <Chip>Best for this computer</Chip>
           {busy && <Chip>Installing · {Math.round(job.progress)}%</Chip>}
           {job.phase === "paused" && <Chip>Paused · {Math.round(job.progress)}%</Chip>}
           {ready && <Chip>Installed · {sizeLabel(model)}</Chip>}
@@ -161,7 +160,7 @@ function RecommendedCard({ model, onChanged }: { model: ModelInfo; onChanged: ()
         ) : (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm text-on-light-muted">
-              Small and fast on any computer. One click sets up everything it needs ({sizeLabel(model)}).
+              {model.description} One click sets up everything it needs ({sizeLabel(model)}).
             </p>
             <Button variant="ink" size="sm" icon={Download} onClick={() => void job.start()}>
               Install
@@ -212,6 +211,11 @@ function DeviceCards({ engineReady }: { engineReady: (engine: string) => boolean
 }
 
 
+// The version an engine's page opens on: the recommended one, else the first that fits.
+function defaultVariant(variants: ModelInfo[]): string {
+  return (variants.find((v) => v.recommended) ?? variants.find((v) => v.fit.fits) ?? variants[0])?.id ?? "";
+}
+
 function EngineDetail({
   engine,
   variants,
@@ -225,12 +229,10 @@ function EngineDetail({
 }) {
   const { navigate, settings } = useApp();
   const prerequisite = ENGINE_PREREQUISITE[engine];
-  const [selectedId, setSelectedId] = useState<string>(
-    () => (variants.find((v) => v.fit.fits) ?? variants[0])?.id ?? "",
-  );
+  const [selectedId, setSelectedId] = useState<string>(() => defaultVariant(variants));
   useEffect(() => {
     if (!variants.some((v) => v.id === selectedId)) {
-      setSelectedId((variants.find((v) => v.fit.fits) ?? variants[0])?.id ?? "");
+      setSelectedId(defaultVariant(variants));
     }
   }, [variants, selectedId]);
   const selected = variants.find((v) => v.id === selectedId) ?? null;
@@ -297,7 +299,7 @@ function EngineDetail({
                           </span>
                         </span>
                         <Chip tone={v.fit.fits && v.fit.notes.length === 0 ? "success" : "warning"} title={[...v.fit.reasons, ...v.fit.notes].join("; ") || undefined}>
-                          {v.fit.summary}
+                          {v.recommended ? "Best for this computer" : v.fit.summary}
                         </Chip>
                         <span className="w-16 text-right text-[13px] text-fg-muted tabular-nums">{sizeLabel(v)}</span>
                         {v.status === "ready" && (
@@ -373,7 +375,7 @@ export function SetupView() {
     return byEngine;
   }, [models]);
 
-  const recommended = models.find((m) => m.id === RECOMMENDED_MODEL_ID);
+  const recommended = models.find((m) => m.recommended);
   // The revision bump refetches this view (effect above) and the hero's numbers.
   const onChanged = bump;
   const engineReady = (engine: string) => (grouped.get(engine) ?? []).some((m) => m.status === "ready");
@@ -400,7 +402,15 @@ export function SetupView() {
             <RecommendedCard model={recommended} onChanged={onChanged} />
           ) : (
             <Card tone="secondary-soft" className="flex min-h-[216px] items-center justify-center text-on-light-muted">
-              {loaded ? "The recommended model isn't available." : <Spinner className="h-6 w-6" />}
+              {loaded ? (
+                <p className="max-w-[36ch] px-6 text-center">
+                  {error
+                    ? "Unable to check which model suits this computer."
+                    : "No model runs smoothly on this computer right now. Free up memory or disk space, then refresh."}
+                </p>
+              ) : (
+                <Spinner className="h-6 w-6" />
+              )}
             </Card>
           )}
         </section>
