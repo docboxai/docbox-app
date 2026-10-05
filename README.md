@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Read text from images and PDFs, on your own computer.</b><br>
-  Pick an OCR model and DocBox sets everything up for you. No account, no cloud, no terminal.
+  Pick an OCR model and DocBox sets everything up for you. No account, no cloud.
 </p>
 
 <p align="center">
