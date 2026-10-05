@@ -36,7 +36,7 @@ from docbox.backend.engines.tesseract_engine import TesseractEngine
 # tables (docs/version3.x/module_usage/text_detection.en.md and text_recognition.en.md)
 # put PP-OCRv6 medium above PP-OCRv5 server on both detection (Hmean 86.2 vs 83.8) and
 # recognition (+5.1%), at roughly a tenth of the CPU time for detection, so "Balanced"
-# outranks "High Accuracy". Models for one language family keep quality=None.
+# outranks "Large". Models for one language family keep quality=None.
 
 # --- PaddleOCR: mobile tier (small, fast, CPU-friendly) ---------------------------
 
@@ -88,7 +88,7 @@ registry.register(
     )
 )
 
-# --- PaddleOCR: balanced / high-accuracy tiers -------------------------------------
+# --- PaddleOCR: balanced / large tiers --------------------------------------------
 
 registry.register(
     ModelSpec(
@@ -119,12 +119,13 @@ registry.register(
         id="paddleocr-accurate-en",
         tier=Tier.STANDARD,
         quality=50,
-        name="PaddleOCR High Accuracy — English",
+        name="PaddleOCR Large — English",
         engine="paddleocr",
         requires_extra="paddle",
         description=(
-            "Careful at finding small or crowded English text, like fine print and busy "
-            "forms. Larger and slower than Balanced."
+            "The previous generation's larger version, with an English-only reader. "
+            "Bigger and slower than Balanced, which usually reads better; worth a try "
+            "when Balanced misses English text."
         ),
         languages=["en"],
         approx_download_mb=170,
@@ -158,8 +159,8 @@ for _model_id, _family_label, _rec_name, _langs in _LANGUAGE_FAMILIES:
             engine="paddleocr",
             requires_extra="paddle",
             description=(
-                f"Reads {_family_label} languages with the same careful text-finding "
-                "as the high-accuracy English version."
+                f"Reads {_family_label} languages, using the same larger text finder "
+                "as the Large English version."
             ),
             languages=_langs,
             approx_download_mb=170,

@@ -106,6 +106,8 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: DocBox ${{ github.ref_name }}
           releaseBody: |
+            <img src="https://raw.githubusercontent.com/${{ github.repository }}/main/src-tauri/icons/128x128%402x.png" width="64" height="64" alt="DocBox logo">
+
             **Windows:** download the `.exe` (or `.msi`) and run it. Windows SmartScreen may
             warn about an unrecognized app because the installer isn't code-signed yet:
             choose "More info" then "Run anyway".
