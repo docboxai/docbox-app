@@ -8,11 +8,11 @@ on:
 jobs:
   backend:
     # Windows too: most users are on it, and Windows-only bugs (CRLF, paths, locked
-    # files) don't show up on Linux.
+    # files) don't show up on Linux. macOS: the Apple Silicon release.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest]
+        os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest]
+        os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     defaults:
       run:

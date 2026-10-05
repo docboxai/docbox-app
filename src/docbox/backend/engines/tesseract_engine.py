@@ -30,7 +30,7 @@ from pathlib import Path
 import requests
 from PIL import Image
 
-from docbox.backend.core.paths import get_models_dir
+from docbox.backend.core.paths import MACOS_BIN_DIRS, get_models_dir
 from docbox.backend.engines.base import ProgressCallback
 from docbox.backend.schemas import OcrLine, OcrResult
 
@@ -75,12 +75,15 @@ def _windows_default_binaries() -> list[Path]:
 
 def find_tesseract_binary() -> str | None:
     found = shutil.which("tesseract")
-    if found or sys.platform != "win32":
+    if found:
         return found
-    for candidate in _windows_default_binaries():
-        if candidate.exists():
-            return str(candidate)
-    return None
+    if sys.platform == "win32":
+        candidates = _windows_default_binaries()
+    elif sys.platform == "darwin":
+        candidates = [d / "tesseract" for d in MACOS_BIN_DIRS]
+    else:
+        return None
+    return next((str(c) for c in candidates if c.exists()), None)
 
 
 class TesseractEngine:

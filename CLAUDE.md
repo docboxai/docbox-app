@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-DocBox is a native desktop app (Windows + Linux) for discovering, downloading, and
+DocBox is a native desktop app (Windows, macOS on Apple Silicon, Linux) for discovering, downloading, and
 running open-source OCR models locally — no login, no cloud calls by default. It checks
 device RAM/CPU/disk against each model's requirements before recommending it.
 
