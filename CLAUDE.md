@@ -38,19 +38,22 @@ cargo install tauri-cli --version "^2" --locked   # once, for `cargo tauri`
 ### Run the full app
 
 ```sh
-cd src-tauri && cargo tauri dev
+cargo tauri dev   # from the repository root
 ```
 
-`beforeDevCommand`/`beforeBuildCommand` in `src-tauri/tauri.conf.json` run relative to
-the project root (the parent of `src-tauri/`), not `src-tauri/` itself — don't add a
-`../` prefix to those paths. Dev builds run the repo's `.venv/…/python`, so `uv sync`
+Run the Tauri CLI from the repository root. With no `package.json` there, it searches
+below for one and takes `frontend/` as the frontend directory, which is where
+`beforeDevCommand`/`beforeBuildCommand` in `src-tauri/tauri.conf.json` run (so they're
+plain `npm run dev`/`npm run build`). Run from `src-tauri/`, it finds no `package.json` and
+falls back to the repository root, where those hooks fail. tauri-action in the release
+workflow runs from the root too. Dev builds run the repo's `.venv/…/python`, so `uv sync`
 must have been run first. A plain `uv sync` is exact: it uninstalls extras you didn't
 pass, so always pass the extras you need.
 
 ### Build an installer locally
 
 ```sh
-cd src-tauri && cargo tauri build   # needs TAURI_SIGNING_PRIVATE_KEY (updater artifacts)
+cargo tauri build   # from the root; needs TAURI_SIGNING_PRIVATE_KEY (updater artifacts)
 ```
 
 `build.rs` copies `uv` from PATH into `src-tauri/binaries/uv-<target-triple>` when the
@@ -187,9 +190,11 @@ the extra (0–40%) before the weights (40–100%). Engine modules must import t
 packages lazily (inside methods): `models_catalog.py` imports every engine module even
 when its extra isn't installed.
 
-Releases: `.github/workflows/release.yml` on `v*` tags (version must match in
-`tauri.conf.json`, `Cargo.toml` and `pyproject.toml`), signing updater artifacts with the
-`TAURI_SIGNING_PRIVATE_KEY` secret and substituting `OWNER/REPO` in the updater endpoint.
+Releases: `.github/workflows/release.yml` on `v*` tags. Its `check` job refuses a tag on a
+commit that isn't on `main`, a version that doesn't match `tauri.conf.json`, `Cargo.toml`
+and `pyproject.toml`, or a missing `TAURI_SIGNING_PRIVATE_KEY` secret; then the builds sign
+the updater artifacts with it and substitute `OWNER/REPO` in the updater endpoint. Its
+third-party actions are pinned to commits and the Tauri CLI to an exact version.
 The frontend's `UpdateBanner` calls the `prepare_restart` command (stop the backend)
 before `update.install()`, because the Windows updater exits the app without the normal
 close handling.
