@@ -18,6 +18,11 @@ _APP_NAME = "DocBox"
 _APP_AUTHOR = "docbox"
 
 
+# A macOS app opened from Finder gets a bare PATH without Homebrew's folders (Apple
+# Silicon, then Intel), so programs installed with `brew` are looked for there too.
+MACOS_BIN_DIRS = (Path("/opt/homebrew/bin"), Path("/usr/local/bin"))
+
+
 def get_data_dir() -> Path:
     override = os.environ.get("DOCBOX_DATA_DIR")
     d = Path(override) if override else Path(

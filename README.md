@@ -18,7 +18,7 @@
 
 ---
 
-DocBox is a desktop app for **Windows and Linux** that runs open-source OCR (optical
+DocBox is a desktop app for **Windows, macOS (Apple Silicon) and Linux** that runs open-source OCR (optical
 character recognition) models locally. It checks your computer's memory and disk, tells
 you which models will run well, and installs everything a model needs (its engine, the
 model files, even helper programs) with one click. Your documents never leave your
@@ -53,11 +53,16 @@ Download the latest version from the **[Releases page](../../releases/latest)**.
 |---|---|---|
 | Windows 10/11 | `DocBox_x.y.z_x64-setup.exe` | Run it. No admin rights needed; it installs for your user only. |
 | Windows (IT-managed) | `DocBox_x.y.z_x64_en-US.msi` | The same app as an MSI package. |
+| macOS 12+ (Apple Silicon) | `DocBox_x.y.z_aarch64.dmg` | Open it and drag DocBox to Applications. |
 | Linux (any distro) | `DocBox_x.y.z_amd64.AppImage` | `chmod +x DocBox_*.AppImage`, then double-click it or run it. |
 | Debian / Ubuntu | `DocBox_x.y.z_amd64.deb` | `sudo apt install ./DocBox_*.deb` |
 
 > **Windows says "Windows protected your PC"?** The installer isn't code-signed yet, so
 > SmartScreen doesn't recognise it. Click **More info → Run anyway**.
+>
+> **macOS won't open DocBox?** It isn't notarized by Apple yet. Open **System Settings ›
+> Privacy & Security** and click **Open Anyway** next to DocBox. Intel Macs aren't
+> supported: PaddleOCR has no Intel macOS build. EasyOCR needs macOS 14 or later.
 
 The installer is small (about 16 MB). DocBox downloads the rest when you need it.
 
@@ -118,11 +123,11 @@ Some engines use a program or service from outside DocBox. **Connections** shows
 one's status and how to set it up.
 
 - **Ollama** runs AI vision models locally. On Windows, click **Install Ollama for me**.
-  DocBox uses Windows' own installer, so you'll see Windows' permission prompt. On Linux,
-  copy the command shown and run it in a terminal. Then pick a model under
+  DocBox uses Windows' own installer, so you'll see Windows' permission prompt. On macOS
+  and Linux, copy the command shown and run it in a terminal (on macOS it uses Homebrew). Then pick a model under
   **Setup › Ollama** and DocBox downloads it through Ollama.
 - **Tesseract** is a classic OCR program with the same one-click (Windows) or one-command
-  (Linux) setup. DocBox then downloads its language files itself.
+  (macOS, Linux) setup. DocBox then downloads its language files itself.
 - **NVIDIA NIM** runs models in NVIDIA's cloud using your own API key (get one at
   [build.nvidia.com](https://build.nvidia.com)). It's the only option that sends images
   off your computer, so it only works while the **Cloud engine** switch (top right) is on.
@@ -180,7 +185,8 @@ Bulgarian), Arabic, Devanagari (Hindi, Marathi) and Korean.
 - **A download failed:** check your connection and click the button again to retry.
 - **Ollama says "isn't running":** start the Ollama app, or click **Start Ollama** in
   **Connections**, then **Check again**.
-- **Where's my data?** In `%LOCALAPPDATA%\com.docbox.app` on Windows or
+- **Where's my data?** In `%LOCALAPPDATA%\com.docbox.app` on Windows,
+  `~/Library/Application Support/com.docbox.app` on macOS or
   `~/.local/share/com.docbox.app` on Linux; **Engines on disk** on the Models page shows it
 too. Read history (the text of files you've read) is in its `history` folder; saved
 results are in `Documents/DocBox`. To remove
@@ -247,8 +253,8 @@ The logo's source is `src-tauri/icons/logo.svg`; regenerate the icon set with
 
 ## Releasing
 
-`.github/workflows/release.yml` builds Windows (`.exe`, `.msi`) and Linux (`.AppImage`,
-`.deb`, `.rpm`) installers and creates a **draft** GitHub Release with the updater's
+`.github/workflows/release.yml` builds Windows (`.exe`, `.msi`), macOS on Apple Silicon
+(`.dmg`, ad-hoc signed, not notarized) and Linux (`.AppImage`, `.deb`, `.rpm`) installers and creates a **draft** GitHub Release with the updater's
 `latest.json`.
 
 One-time setup: add two repository secrets (Settings → Secrets and variables → Actions):

@@ -15,6 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from docbox.backend.core.paths import MACOS_BIN_DIRS
 from docbox.backend.core.runtime import run_streaming
 from docbox.backend.engines.base import ProgressCallback
 from docbox.backend.engines.tesseract_engine import find_tesseract_binary
@@ -36,13 +37,24 @@ PREREQUISITES: dict[str, dict[str, str]] = {
 }
 
 
+_OLLAMA_MAC_APP = Path("/Applications/Ollama.app")
+
+
 def _ollama_binary() -> str | None:
     found = shutil.which("ollama")
-    if found or sys.platform != "win32":
+    if found:
         return found
-    local = os.environ.get("LOCALAPPDATA")
-    candidate = Path(local) / "Programs" / "Ollama" / "ollama.exe" if local else None
-    return str(candidate) if candidate and candidate.exists() else None
+    if sys.platform == "win32":
+        local = os.environ.get("LOCALAPPDATA")
+        candidates = [Path(local) / "Programs" / "Ollama" / "ollama.exe"] if local else []
+    elif sys.platform == "darwin":
+        candidates = [
+            *(d / "ollama" for d in MACOS_BIN_DIRS),
+            _OLLAMA_MAC_APP / "Contents" / "Resources" / "ollama",
+        ]
+    else:
+        return None
+    return next((str(c) for c in candidates if c.exists()), None)
 
 
 def state(prereq_id: str, *, fresh: bool = False) -> str:
@@ -133,6 +145,9 @@ def start_ollama() -> None:
         cmd = [str(tray)] if tray.exists() else [binary, "serve"]
         flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
         subprocess.Popen(cmd, creationflags=flags, close_fds=True)
+    elif sys.platform == "darwin" and _OLLAMA_MAC_APP.exists():
+        # The menu-bar app, as Ollama's own installer sets it up; it runs the server.
+        subprocess.Popen(["open", "-a", str(_OLLAMA_MAC_APP)])
     else:
         subprocess.Popen(
             [binary, "serve"],
