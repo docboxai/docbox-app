@@ -73,6 +73,9 @@ class ModelInfo(BaseModel):
     requires_extra: str | None = None
     prerequisite: str | None = None
     fit: FitResult
+    # The one model Setup recommends: the best-reading built-in model that runs smoothly
+    # on this computer (registry.recommend).
+    recommended: bool = False
     # The model's unfinished (running or paused) download, so the UI can show progress
     # after the user navigates away and back.
     active_job: DownloadStatus | None = None

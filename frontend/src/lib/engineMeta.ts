@@ -76,16 +76,14 @@ export const ENGINE_PREREQUISITE: Record<string, string> = {
   tesseract: "tesseract",
 };
 
-export const RECOMMENDED_MODEL_ID = "paddleocr-mobile-en";
-
 // Practical "which one do I actually need" advice, shown alongside the variant picker
 // on an engine's detail page — distinct from ENGINE_CAPABILITIES, which just describes
 // what the engine is.
 export const ENGINE_GUIDANCE: Record<string, string> = {
   paddleocr:
-    "Start with Mobile: it's small and fast. If results look rough, try Balanced or " +
-    "High accuracy. Reading French, Russian, Arabic, Hindi or Korean? Pick that " +
-    "language's version.",
+    "Start with the version marked Best for this computer. Balanced reads most " +
+    "accurately; Mobile is smaller, for older computers. Reading French, Russian, " +
+    "Arabic, Hindi or Korean? Pick that language's version.",
   "paddleocr-vl":
     "Only pick this if you need tables and page structure kept, and DocBox says it " +
     "fits this computer. For plain text, regular PaddleOCR is much faster.",

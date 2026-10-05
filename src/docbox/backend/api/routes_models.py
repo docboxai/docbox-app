@@ -6,7 +6,7 @@ from docbox.backend import platforms
 from docbox.backend.core import prerequisites, runtime
 from docbox.backend.core.device import get_device_capabilities
 from docbox.backend.core.jobs import DownloadJob, JobPaused, job_store
-from docbox.backend.core.registry import ModelSpec, check_fit, registry
+from docbox.backend.core.registry import ModelSpec, check_fit, recommend, registry
 from docbox.backend.engines.base import NotDeletableError, ProgressCallback
 from docbox.backend.engines.remote_engine import EngineServiceError
 from docbox.backend.schemas import (
@@ -26,6 +26,9 @@ class _Snapshot:
         self.caps = get_device_capabilities()
         self.extras = runtime.installed_extras()
         self._prereqs: dict[str, bool] = {}
+        # Only the built-in catalog is ranked; Ollama and cloud models never are.
+        pick = recommend(registry.list(), self.caps)
+        self.recommended_id = pick.id if pick else None
 
     def prereq_ok(self, prereq_id: str) -> bool:
         if prereq_id not in self._prereqs:
@@ -68,6 +71,7 @@ def _to_model_info(spec: ModelSpec, snap: _Snapshot) -> ModelInfo:
         requires_extra=spec.requires_extra,
         prerequisite=spec.prerequisite,
         fit=check_fit(spec, snap.caps),
+        recommended=spec.id == snap.recommended_id,
         active_job=_job_status(job) if (job := job_store.unfinished_for(spec.id)) else None,
     )
 

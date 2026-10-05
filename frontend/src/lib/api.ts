@@ -39,6 +39,8 @@ export interface ModelInfo {
   requires_extra: string | null;
   prerequisite: string | null;
   fit: FitResult;
+  // The one model Setup recommends: the best built-in reader that runs smoothly here.
+  recommended: boolean;
   // Its running or paused download, if any.
   active_job: DownloadStatus | null;
 }
