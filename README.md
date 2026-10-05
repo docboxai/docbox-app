@@ -18,11 +18,11 @@
 
 ---
 
-DocBox is a desktop app for **Windows, macOS (Apple Silicon) and Linux** that runs open-source OCR (optical
-character recognition) models locally. It checks your computer's memory and disk, tells
-you which models will run well, and installs everything a model needs (its engine, the
-model files, even helper programs) with one click. Your documents never leave your
-computer unless you choose the optional NVIDIA cloud engine.
+DocBox is a desktop app for **Windows, macOS (Apple Silicon) and Linux** that runs
+open-source OCR (optical character recognition) models locally. It checks your computer's
+memory and disk, tells you which models will run well, and installs everything a model
+needs (its engine, the model files, even helper programs) with one click. Your documents
+never leave your computer unless you choose the optional NVIDIA cloud engine.
 
 ![DocBox's Setup screen](docs/screenshots/02-setup.png)
 
@@ -185,12 +185,12 @@ Bulgarian), Arabic, Devanagari (Hindi, Marathi) and Korean.
 - **A download failed:** check your connection and click the button again to retry.
 - **Ollama says "isn't running":** start the Ollama app, or click **Start Ollama** in
   **Connections**, then **Check again**.
-- **Where's my data?** In `%LOCALAPPDATA%\com.docbox.app` on Windows,
-  `~/Library/Application Support/com.docbox.app` on macOS or
-  `~/.local/share/com.docbox.app` on Linux; **Engines on disk** on the Models page shows it
-too. Read history (the text of files you've read) is in its `history` folder; saved
-results are in `Documents/DocBox`. To remove
-  everything after uninstalling the app, delete that folder.
+- **Where's my data?** In `%LOCALAPPDATA%\io.github.docboxai.docbox` on Windows,
+  `~/Library/Application Support/io.github.docboxai.docbox` on macOS or
+  `~/.local/share/io.github.docboxai.docbox` on Linux; **Engines on disk** on the Models
+  page shows it too. Read history (the text of files you've read) is in its `history`
+  folder; saved results are in `Documents/DocBox`. To remove everything after uninstalling
+  the app, delete that folder.
 
 ## Privacy
 
@@ -233,7 +233,7 @@ of files you read is kept on this computer (Recent files) until you remove it th
 ```sh
 uv sync --extra paddle           # base + PaddleOCR (--all-extras adds EasyOCR/PyTorch)
 npm --prefix frontend install
-cd src-tauri && cargo tauri dev
+cargo tauri dev                  # from the repository root
 ```
 
 A plain `uv sync` removes extras you didn't pass, so always pass the ones you want.
@@ -244,9 +244,9 @@ A plain `uv sync` removes extras you didn't pass, so always pass the ones you wa
   its own origin and Vite proxies it to `http://127.0.0.1:8756` (set `DOCBOX_BACKEND_URL`
   to point elsewhere), so it also works behind a reverse proxy or from another device.
 - Tests and lint: `uv run pytest`, `uv run ruff check src/docbox tests`.
-- Local installer: `cd src-tauri && cargo tauri build`. `build.rs` copies your own `uv` in
-  as the sidecar when `src-tauri/binaries/` is empty. Updater artifacts need the signing
-  key in `TAURI_SIGNING_PRIVATE_KEY`.
+- Local installer: `cargo tauri build` from the repository root. `build.rs` copies your
+  own `uv` in as the sidecar when `src-tauri/binaries/` is empty. Updater artifacts need
+  the signing key in `TAURI_SIGNING_PRIVATE_KEY`.
 
 The logo's source is `src-tauri/icons/logo.svg`; regenerate the icon set with
 `cargo tauri icon src-tauri/icons/logo.svg`.
@@ -254,10 +254,15 @@ The logo's source is `src-tauri/icons/logo.svg`; regenerate the icon set with
 ## Releasing
 
 `.github/workflows/release.yml` builds Windows (`.exe`, `.msi`), macOS on Apple Silicon
-(`.dmg`, ad-hoc signed, not notarized) and Linux (`.AppImage`, `.deb`, `.rpm`) installers and creates a **draft** GitHub Release with the updater's
-`latest.json`.
+(`.dmg`, ad-hoc signed, not notarized) and Linux (`.AppImage`, `.deb`, `.rpm`) installers
+and creates a **draft** GitHub Release with the updater's `latest.json`. Releases come
+only from `main`: the workflow refuses a tag on any commit that isn't on `main`.
 
-One-time setup: add two repository secrets (Settings → Secrets and variables → Actions):
+One-time setup: create the updater signing key with
+`cargo tauri signer generate -w ~/.tauri/docbox-updater.key`, put the contents of
+`~/.tauri/docbox-updater.key.pub` in `plugins.updater.pubkey` in
+`src-tauri/tauri.conf.json`, then add two repository secrets (Settings → Secrets and
+variables → Actions):
 
 - `TAURI_SIGNING_PRIVATE_KEY`: the contents of the updater signing key. Updates are only
   accepted if signed with it; its public half is in `src-tauri/tauri.conf.json`.
@@ -267,8 +272,9 @@ Keep the private key safe and backed up. Losing it means installed copies can't 
 updates.
 
 To release: bump the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and
-`pyproject.toml` (the workflow refuses a mismatch), commit, then
-`git tag v0.2.0 && git push --tags`. Review the draft release and publish it.
+`pyproject.toml` on `main` (the workflow refuses a mismatch), then tag that commit and push
+the tag: `git tag -a v0.2.0 -m "DocBox 0.2.0" && git push origin v0.2.0`. Review the draft
+release and publish it.
 
 ## Running the backend in Docker
 

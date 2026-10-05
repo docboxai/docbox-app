@@ -1,22 +1,65 @@
 name: Release
 
-# Push a tag like v0.2.0 (matching the version in tauri.conf.json, pyproject.toml and
-# src-tauri/Cargo.toml) to build installers and publish them as a *draft* GitHub
-# Release. Review the draft, then publish it: that's what existing installs' updater
-# sees. MSI needs a plain x.y.z version (no "-rc1" suffixes).
+# Releases come only from main. Bump the version in tauri.conf.json, pyproject.toml and
+# src-tauri/Cargo.toml on main, then push a tag like v0.2.0 on that main commit. The
+# `check` job refuses anything else before an installer is built. The build makes a
+# *draft* GitHub Release; review it, then publish it: that's what existing installs'
+# updater sees. MSI needs a plain x.y.z version (no "-rc1" suffixes).
 on:
   push:
     tags: ["v*"]
 
 permissions:
-  contents: write
+  contents: read
 
 env:
   # The uv bundled into the app as its Python/env manager. Bump deliberately.
   UV_VERSION: "0.12.3"
+  # The Tauri CLI that builds and bundles the installers. Bump deliberately.
+  TAURI_CLI_VERSION: "2.12.1"
 
 jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # All history and branches, so the tagged commit can be checked against main.
+          fetch-depth: 0
+
+      - name: Check the tagged commit is on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::$GITHUB_REF_NAME points at $GITHUB_SHA, which isn't on main. Releases come only from main."
+            exit 1; }
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the tag matches every version field
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          conf=$(python -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+          py=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          cargo=$(python -c "import tomllib;print(tomllib.load(open('src-tauri/Cargo.toml','rb'))['package']['version'])")
+          echo "tag=$tag tauri=$conf pyproject=$py cargo=$cargo"
+          [ "$tag" = "$conf" ] && [ "$tag" = "$py" ] && [ "$tag" = "$cargo" ] || {
+            echo "::error::Version mismatch: bump all three to $tag on main before tagging"; exit 1; }
+
+      - name: Check the updater signing key is set
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] || {
+            echo "::error::Add the TAURI_SIGNING_PRIVATE_KEY repository secret (README: Releasing)"
+            exit 1; }
+
   build:
+    needs: check
+    permissions:
+      # Creates the draft release and uploads the installers to it.
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -42,17 +85,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Check the tag matches every version field
-        shell: bash
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          conf=$(python -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
-          py=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          cargo=$(python -c "import tomllib;print(tomllib.load(open('src-tauri/Cargo.toml','rb'))['package']['version'])")
-          echo "tag=$tag tauri=$conf pyproject=$py cargo=$cargo"
-          [ "$tag" = "$conf" ] && [ "$tag" = "$py" ] && [ "$tag" = "$cargo" ] || {
-            echo "::error::Version mismatch: bump all three to $tag before tagging"; exit 1; }
 
       - name: Fetch the pinned uv sidecar (checksum-verified)
         shell: bash
@@ -107,10 +139,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - uses: cargo-bins/cargo-binstall@main
-      - run: cargo binstall tauri-cli@^2 --no-confirm
+      # Third-party actions in this write-access job are pinned to a commit.
+      - uses: cargo-bins/cargo-binstall@7bebc2e59eb8820162b7ac8f62a92bfdb2732447 # v1.25.1
+      - run: cargo binstall tauri-cli@=${{ env.TAURI_CLI_VERSION }} --no-confirm
 
-      - uses: tauri-apps/tauri-action@v0
+      # Runs `cargo tauri build` from the repository root, so the CLI takes frontend/ as
+      # the frontend directory and runs tauri.conf.json's beforeBuildCommand there.
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -122,14 +157,16 @@ jobs:
           releaseBody: |
             <img src="https://raw.githubusercontent.com/${{ github.repository }}/main/src-tauri/icons/128x128%402x.png" width="64" height="64" alt="DocBox logo">
 
-            **Windows:** download the `.exe` (or `.msi`) and run it. Windows SmartScreen may
-            warn about an unrecognized app because the installer isn't code-signed yet:
-            choose "More info" then "Run anyway".
-            **macOS (Apple Silicon):** open the `.dmg` and drag DocBox to Applications. The app
-            isn't notarized yet, so the first time macOS blocks it: open System Settings, then
-            Privacy & Security, and choose "Open Anyway" next to DocBox.
-            **Linux:** download the `.AppImage`, `chmod +x` it and run it, or install the `.deb`.
-            The first launch sets up DocBox's own Python runtime (a minute or two, needs internet).
+            - **Windows 10 or 11:** run the `.exe` installer, or the `.msi`. It isn't code-signed
+              yet, so SmartScreen may warn about an unrecognized app: choose **More info**, then
+              **Run anyway**.
+            - **macOS 12 or later, Apple Silicon:** open the `.dmg` and drag DocBox to
+              Applications. It isn't notarized yet, so macOS blocks the first launch: open
+              **System Settings › Privacy & Security** and choose **Open Anyway** next to DocBox.
+            - **Linux:** download the `.AppImage`, `chmod +x` it and run it, or install the `.deb`.
+
+            The first launch sets up DocBox's own Python runtime. It takes a minute or two and
+            needs an internet connection.
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: true
