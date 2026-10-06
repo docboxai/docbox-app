@@ -161,7 +161,8 @@ decide which models will run comfortably.
 ### 7. Updates
 
 DocBox checks for a new version each time it starts. When there is one, a bar at the top
-offers **Install & restart**. Your engines and models are kept.
+offers **Download**, which opens the Releases page. Install the new version over the old
+one: your engines, models and settings are kept.
 
 ## Which engine should I use?
 
@@ -245,8 +246,7 @@ A plain `uv sync` removes extras you didn't pass, so always pass the ones you wa
   to point elsewhere), so it also works behind a reverse proxy or from another device.
 - Tests and lint: `uv run pytest`, `uv run ruff check src/docbox tests`.
 - Local installer: `cargo tauri build` from the repository root. `build.rs` copies your
-  own `uv` in as the sidecar when `src-tauri/binaries/` is empty. Updater artifacts need
-  the signing key in `TAURI_SIGNING_PRIVATE_KEY`.
+  own `uv` in as the sidecar when `src-tauri/binaries/` is empty.
 
 The logo's source is `src-tauri/icons/logo.svg`; regenerate the icon set with
 `cargo tauri icon src-tauri/icons/logo.svg`.
@@ -294,7 +294,7 @@ container, start it on the host with `OLLAMA_HOST=0.0.0.0 ollama serve`.
 
 ```
 src/docbox/backend/   FastAPI app: routes, registry, engines, runtime + prerequisite managers
-src-tauri/            Rust shell: first-run setup, backend lifecycle, updater
+src-tauri/            Rust shell: first-run setup, backend lifecycle
 frontend/             React + TypeScript + Tailwind UI (Vite)
 website/              the landing page (Next.js, deployed on Vercel)
 tests/backend/        pytest suite

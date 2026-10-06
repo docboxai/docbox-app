@@ -27,7 +27,6 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "createUpdaterArtifacts": true,
     "copyright": "Copyright 2026 DocBox AI team (Pranav and Pawan)",
     "externalBin": ["binaries/uv"],
     "resources": {
@@ -58,14 +57,6 @@
         "bannerPath": "icons/installer/wix-banner.bmp",
         "dialogImagePath": "icons/installer/wix-dialog.bmp"
       }
-    }
-  },
-  "plugins": {
-    "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIyNjk3MEMzNjQwMUQ5NTAKUldSUTJRRmt3M0JwSXQvRmFpbEtXdEpXRU50SmlIdEpsZWVLMjR4MWxkZm9jMkVYd2d0LzZUME4K",
-      "endpoints": [
-        "https://github.com/OWNER/REPO/releases/latest/download/latest.json"
-      ]
     }
   }
 }

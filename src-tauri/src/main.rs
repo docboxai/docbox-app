@@ -350,8 +350,7 @@ fn backend_base_url(state: State<Backend>) -> Result<String, String> {
 }
 
 /// Stop the bootstrap `uv` and the backend (whole process trees). Every way the app can
-/// end goes through here: window close, the updater handing off to the installer on
-/// Windows, an in-app restart after an update, and normal exit.
+/// end goes through here: window close and normal exit.
 fn shutdown_backend(app: &AppHandle) {
     let state = app.state::<Backend>();
     let setup_pid = state.setup_pid.lock().unwrap().take();
@@ -363,11 +362,6 @@ fn shutdown_backend(app: &AppHandle) {
         kill_tree(child.id());
         let _ = child.wait();
     }
-}
-
-#[tauri::command]
-fn prepare_restart(app: AppHandle) {
-    shutdown_backend(&app);
 }
 
 #[tauri::command]
@@ -384,10 +378,9 @@ fn retry_backend(app: AppHandle, state: State<Backend>) {
 
 fn main() {
     let app = tauri::Builder::default()
-        // Updates are driven from the frontend, which calls `prepare_restart` right
-        // before installing (on Windows the updater exits the app to run the installer).
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init())
+        // Opens the releases page from the update notice in the default browser; the
+        // capability allows only that page.
+        .plugin(tauri_plugin_opener::init())
         .manage(Backend::default())
         .setup(|app| {
             // The window shows right away (on the setup screen); the backend comes up
@@ -398,8 +391,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             backend_status,
             backend_base_url,
-            retry_backend,
-            prepare_restart
+            retry_backend
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
