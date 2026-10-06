@@ -53,7 +53,7 @@ pass, so always pass the extras you need.
 ### Build an installer locally
 
 ```sh
-cargo tauri build   # from the root; needs TAURI_SIGNING_PRIVATE_KEY (updater artifacts)
+cargo tauri build   # from the root
 ```
 
 `build.rs` copies `uv` from PATH into `src-tauri/binaries/uv-<target-triple>` when the
@@ -195,9 +195,9 @@ commit that isn't on `main`, a version that doesn't match `tauri.conf.json`, `Ca
 and `pyproject.toml`, or a missing `TAURI_SIGNING_PRIVATE_KEY` secret; then the builds sign
 the updater artifacts with it and substitute `OWNER/REPO` in the updater endpoint. Its
 third-party actions are pinned to commits and the Tauri CLI to an exact version.
-The frontend's `UpdateBanner` calls the `prepare_restart` command (stop the backend)
-before `update.install()`, because the Windows updater exits the app without the normal
-close handling.
+There is no auto-updater: the frontend's `UpdateBanner` compares the app version with
+GitHub's latest release and opens the releases page, the only URL the opener capability
+allows.
 
 ### The "never silently install untrusted binaries" rule
 
