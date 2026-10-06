@@ -1,9 +1,8 @@
-import { Download, Star } from "lucide-react";
-import { formatCount } from "@/lib/github";
+import { Download } from "lucide-react";
 import { links } from "@/lib/links";
 import { reveal } from "@/lib/reveal";
 import { ClosingAurora } from "./ClosingAurora";
-import { GitHubMark } from "./marks";
+import { StarButton } from "./StarButton";
 
 const FOOTER_LINKS = [
   { label: "Models", href: links.engines },
@@ -40,22 +39,7 @@ export function Closing({ stars }: { stars: number | null }) {
             <Download aria-hidden="true" className="size-4" />
             Download DocBox
           </a>
-          <a
-            href={links.repo}
-            className="press flex items-center gap-2 rounded-full bg-ink/40 py-[13px] ps-[18px] pe-5 text-sm font-semibold ring-1 ring-white/25 hover:bg-ink/60 hover:ring-white/45"
-          >
-            <GitHubMark className="size-4" />
-            Star on GitHub
-            {stars !== null && (
-              <>
-                <Star aria-hidden="true" className="size-[13px] text-sun" />
-                <span className="text-tolopea-100">
-                  {formatCount(stars)}
-                  <span className="sr-only"> stars</span>
-                </span>
-              </>
-            )}
-          </a>
+          <StarButton stars={stars} className="py-[13px]" />
         </div>
       </div>
     </section>

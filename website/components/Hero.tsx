@@ -1,8 +1,9 @@
 import { links } from "@/lib/links";
 import { enter } from "@/lib/reveal";
 import { HeroEmblem } from "./HeroEmblem";
+import { StarButton } from "./StarButton";
 
-export function Hero() {
+export function Hero({ stars }: { stars: number | null }) {
   return (
     <section aria-labelledby="hero-title" className="px-3 sm:px-5">
       <div className="overflow-hidden rounded-b-[28px] bg-[linear-gradient(180deg,#05030f_0%,#0a0626_28%,#24128a_52%,#4318ff_72%,#7f76ff_88%,#e5e5ff_100%)] px-6 pt-20 pb-48 lg:h-[820px] lg:px-0 lg:pt-[242px] lg:pb-0">
@@ -37,19 +38,14 @@ export function Hero() {
               The local test bench that sends every page to each OCR model you have installed —
               without a single file leaving your computer.
             </p>
-            <div {...enter(300)} className="flex items-center gap-5 pt-1.5">
+            <div {...enter(300)} className="flex flex-wrap items-center gap-3 pt-1.5">
               <a
                 href={links.download}
                 className="press rounded-full bg-white px-5 py-3 text-sm font-semibold text-ink hover:bg-tolopea-100"
               >
                 Download
               </a>
-              <a
-                href="#compare"
-                className="rounded-sm text-sm font-medium text-white underline decoration-white/0 underline-offset-4 transition-[text-decoration-color] duration-150 hover:decoration-white/70"
-              >
-                See the models
-              </a>
+              <StarButton stars={stars} className="py-3" />
             </div>
           </div>
           <div {...enter(150)}>
