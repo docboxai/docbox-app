@@ -282,6 +282,16 @@ new engine, add its icon/label/capabilities/guidance to the maps in
 Every engine implements `delete()`; PaddleOCR's keeps model dirs another *downloaded*
 catalog entry still uses (all PP-OCRv5 language families share `PP-OCRv5_server_det`).
 
+### Website
+
+`website/` is the landing page, separate from the app: Next.js (App Router), Tailwind 4,
+Lenis smooth scrolling, bun, deployed on Vercel with `website/` as the project root. CI
+lints and builds it. Its shader effects run the design's pen.dev GLSL unchanged
+(`components/shader/glsl/`); `ShaderCanvas` fills the annotated uniforms and divides
+gl_FragCoord by the pixel ratio so effects keep the design's pixel scale. Scroll reveals
+use `data-reveal` (from `lib/reveal.ts`): put it on a wrapper, never on an element with
+its own transitions, since it sets `translate` and `transition`. See `website/README.md`.
+
 ### PaddleOCR internals worth knowing before touching `engines/paddleocr_engine.py` or `paddleocr_vl_engine.py`
 
 - Cache location is redirected via the `PADDLE_PDX_CACHE_HOME` env var, set before

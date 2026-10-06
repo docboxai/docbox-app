@@ -296,6 +296,7 @@ container, start it on the host with `OLLAMA_HOST=0.0.0.0 ollama serve`.
 src/docbox/backend/   FastAPI app: routes, registry, engines, runtime + prerequisite managers
 src-tauri/            Rust shell: first-run setup, backend lifecycle, updater
 frontend/             React + TypeScript + Tailwind UI (Vite)
+website/              the landing page (Next.js, deployed on Vercel)
 tests/backend/        pytest suite
 docs/screenshots/     README screenshots
 .github/workflows/    CI and release pipelines
