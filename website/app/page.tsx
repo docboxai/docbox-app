@@ -13,7 +13,7 @@ export default async function Home() {
   return (
     <>
       <main>
-        <Hero />
+        <Hero stars={stars} />
         <WorksWith />
         <Features />
         <Compare />
