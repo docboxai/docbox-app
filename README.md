@@ -51,11 +51,11 @@ Download the latest version from the **[Releases page](../../releases/latest)**.
 
 | System | Download | How to install |
 |---|---|---|
-| Windows 10/11 | `DocBox_x.y.z_x64-setup.exe` | Run it. No admin rights needed; it installs for your user only. |
-| Windows (IT-managed) | `DocBox_x.y.z_x64_en-US.msi` | The same app as an MSI package. |
-| macOS 12+ (Apple Silicon) | `DocBox_x.y.z_aarch64.dmg` | Open it and drag DocBox to Applications. |
-| Linux (any distro) | `DocBox_x.y.z_amd64.AppImage` | `chmod +x DocBox_*.AppImage`, then double-click it or run it. |
-| Debian / Ubuntu | `DocBox_x.y.z_amd64.deb` | `sudo apt install ./DocBox_*.deb` |
+| Windows 10/11 | `DocBox-x.y.z-windows-x86-64.exe` | Run it. No admin rights needed; it installs for your user only. |
+| Windows (IT-managed) | `DocBox-x.y.z-windows-x86-64.msi` | The same app as an MSI package. |
+| macOS 12+ (Apple Silicon) | `DocBox-x.y.z-macos-arm-64.dmg` | Open it and drag DocBox to Applications. |
+| Linux (any distro) | `DocBox-x.y.z-linux-x86-64.AppImage` | `chmod +x DocBox-*.AppImage`, then double-click it or run it. |
+| Debian / Ubuntu | `DocBox-x.y.z-linux-x86-64.deb` | `sudo apt install ./DocBox-*.deb` |
 
 > **Windows says "Windows protected your PC"?** The installer isn't code-signed yet, so
 > SmartScreen doesn't recognise it. Click **More info → Run anyway**.
@@ -254,27 +254,16 @@ The logo's source is `src-tauri/icons/logo.svg`; regenerate the icon set with
 ## Releasing
 
 `.github/workflows/release.yml` builds Windows (`.exe`, `.msi`), macOS on Apple Silicon
-(`.dmg`, ad-hoc signed, not notarized) and Linux (`.AppImage`, `.deb`, `.rpm`) installers
-and creates a **draft** GitHub Release with the updater's `latest.json`. Releases come
-only from `main`: the workflow refuses a tag on any commit that isn't on `main`.
-
-One-time setup: create the updater signing key with
-`cargo tauri signer generate -w ~/.tauri/docbox-updater.key`, put the contents of
-`~/.tauri/docbox-updater.key.pub` in `plugins.updater.pubkey` in
-`src-tauri/tauri.conf.json`, then add two repository secrets (Settings → Secrets and
-variables → Actions):
-
-- `TAURI_SIGNING_PRIVATE_KEY`: the contents of the updater signing key. Updates are only
-  accepted if signed with it; its public half is in `src-tauri/tauri.conf.json`.
-- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: its password (empty if none).
-
-Keep the private key safe and backed up. Losing it means installed copies can't receive
-updates.
+(`.dmg`, ad-hoc signed, not notarized) and Linux (`.AppImage`, `.deb`, `.rpm`) installers,
+names them `DocBox-<version>-<os>-<arch>` and creates a **draft** GitHub Release with
+GitHub's list of changes. Releases come only from `main`: the workflow refuses a tag on any
+commit that isn't on `main`.
 
 To release: bump the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and
 `pyproject.toml` on `main` (the workflow refuses a mismatch), then tag that commit and push
-the tag: `git tag -a v0.2.0 -m "DocBox 0.2.0" && git push origin v0.2.0`. Review the draft
-release and publish it.
+the tag: `git tag -a v0.2.0 -m "DocBox 0.2.0" && git push origin v0.2.0`. Edit the list of
+changes in the draft release, then publish it; installed copies show the update notice from
+then on.
 
 ## Running the backend in Docker
 
