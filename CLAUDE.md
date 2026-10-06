@@ -45,8 +45,8 @@ Run the Tauri CLI from the repository root. With no `package.json` there, it sea
 below for one and takes `frontend/` as the frontend directory, which is where
 `beforeDevCommand`/`beforeBuildCommand` in `src-tauri/tauri.conf.json` run (so they're
 plain `npm run dev`/`npm run build`). Run from `src-tauri/`, it finds no `package.json` and
-falls back to the repository root, where those hooks fail. tauri-action in the release
-workflow runs from the root too. Dev builds run the repo's `.venv/…/python`, so `uv sync`
+falls back to the repository root, where those hooks fail. The release workflow runs
+`cargo tauri build` from the root too. Dev builds run the repo's `.venv/…/python`, so `uv sync`
 must have been run first. A plain `uv sync` is exact: it uninstalls extras you didn't
 pass, so always pass the extras you need.
 
@@ -191,13 +191,13 @@ packages lazily (inside methods): `models_catalog.py` imports every engine modul
 when its extra isn't installed.
 
 Releases: `.github/workflows/release.yml` on `v*` tags. Its `check` job refuses a tag on a
-commit that isn't on `main`, a version that doesn't match `tauri.conf.json`, `Cargo.toml`
-and `pyproject.toml`, or a missing `TAURI_SIGNING_PRIVATE_KEY` secret; then the builds sign
-the updater artifacts with it and substitute `OWNER/REPO` in the updater endpoint. Its
-third-party actions are pinned to commits and the Tauri CLI to an exact version.
-There is no auto-updater: the frontend's `UpdateBanner` compares the app version with
-GitHub's latest release and opens the releases page, the only URL the opener capability
-allows.
+commit that isn't on `main` or a version that doesn't match `tauri.conf.json`, `Cargo.toml`
+and `pyproject.toml`. Each platform's `build` job uploads its installers; the `release` job
+names them `DocBox-<version>-<os>-<arch>.<ext>` and creates a draft release, failing if an
+installer is missing or unexpected. Its third-party actions are pinned to commits and the
+Tauri CLI to an exact version. There is no auto-updater (no signing key, `.sig` files or
+`latest.json`): the frontend's `UpdateBanner` compares the app version with GitHub's latest
+release and opens the releases page, the only URL the opener capability allows.
 
 ### The "never silently install untrusted binaries" rule
 
