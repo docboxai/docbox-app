@@ -274,6 +274,13 @@ def test_reports(fakes, docs) -> None:
     assert benchmarks.render_report(run.id, "md").startswith("# docs")
 
 
+def test_cli_bench_models_flag_repeats(fakes, docs, capsys) -> None:
+    assert main(["--json", "bench", "run", str(docs), "-m", "fake-good",
+                 "-m", "fake-sloppy"]) == 0
+    run = json.loads(capsys.readouterr().out)
+    assert [m["model_id"] for m in run["models"]] == ["fake-good", "fake-sloppy"]
+
+
 def test_cli_bench_commands(fakes, docs, capsys) -> None:
     assert main(["--json", "bench", "run", str(docs), "-m", "fake-good,fake-sloppy",
                  "--name", "Invoices"]) == 0
