@@ -231,6 +231,22 @@ Tests: `tests/conftest.py` provides `data_dir` (temp `DOCBOX_DATA_DIR`) and `fak
 `installed_fake` (a registered `test-fake` model that reads instantly), and the CLI is run
 in-process with `docbox.cli.main.main(argv)`.
 
+### Benchmarks (`src/docbox/benchmark/`)
+
+`runner.create()` checks the dataset (`dataset.py`: files/folders with `.gt.txt` /
+`.pN.gt.txt` sidecars, or a `.json`/`.jsonl` manifest) and models up front and saves a
+queued run; `runner.execute()` then runs each model **in its own worker process**
+(`python -m docbox.benchmark.worker`, JSON job on stdin, one JSON event per line on a
+private copy of stdout; libraries' own prints are moved to stderr) — for honest peak memory
+(psutil, sampled by the parent), crash/hang isolation (per-page timeout) and so native libs
+never load in the backend. Runs live in `<data>/benchmarks/<run_id>/` (`store.py`); only the
+running process writes them, a `cancel` file stops them from any process, and a running run
+whose pid is gone reads as `interrupted`. `report.py` builds the leaderboard (CER/WER via
+rapidfuzz on NFKC/whitespace-normalised text, failed pages scored as empty) and the per-page
+compare view with diff spans ("slips"). `service/benchmarks.py` is the front-end API.
+Tests use fake engines in `tests/benchmark/bench_fakes.py`, loaded into workers through
+`DOCBOX_PRELOAD`.
+
 ### The "never silently install untrusted binaries" rule
 
 System-level programs (Tesseract, Ollama) are never installed without the user's

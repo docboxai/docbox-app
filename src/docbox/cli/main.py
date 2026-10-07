@@ -6,11 +6,11 @@ import argparse
 import sys
 
 from docbox import __version__
-from docbox.cli.commands import device, engines, models, read, settings
+from docbox.cli.commands import bench, device, engines, models, read, settings
 from docbox.cli.output import EXIT_ERROR, EXIT_USAGE, Output, exit_code
 from docbox.service.errors import ServiceError
 
-_GROUPS = (device, models, engines, read, settings)
+_GROUPS = (device, models, engines, read, bench, settings)
 
 
 def build_parser() -> argparse.ArgumentParser:
