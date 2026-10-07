@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Response
 
 from docbox.backend.api.errors import http_errors
-from docbox.backend.core.jobs import JobPaused, job_store
+from docbox.backend.core.jobs import job_store
 from docbox.backend.schemas import (
     DownloadStartResponse,
     DownloadStatus,
@@ -25,40 +25,12 @@ def get_model(model_id: str) -> ModelInfo:
         return service.get_model(model_id)
 
 
-def _run_download(job_id: str, model_id: str) -> None:
-    def progress(state: str, pct: float, message: str) -> None:
-        # "done" is reported last, below, once the whole job has finished.
-        job_store.update(job_id, state=None if state == "done" else state,
-                         progress_pct=pct, message=message)
-
-    try:
-        service.install_model(
-            model_id, progress, should_pause=lambda: job_store.pause_requested(job_id)
-        )
-        job_store.update(job_id, state="done", progress_pct=100.0, message="ready")
-    except JobPaused:
-        job_store.update(job_id, state="paused", message="paused")
-    except Exception as exc:  # noqa: BLE001
-        job_store.update(job_id, state="error", message=getattr(exc, "detail", str(exc)))
-
-
 @router.post("/{model_id}/download", response_model=DownloadStartResponse, status_code=202)
 def start_download(model_id: str, background_tasks: BackgroundTasks) -> DownloadStartResponse:
-    with http_errors():
-        service.resolve(model_id)
-
     # A second click while it's already going rejoins the running job instead of
     # starting a duplicate download into the same files.
-    active = job_store.active_for(model_id)
-    if active is not None:
-        return DownloadStartResponse(job_id=active.job_id)
-
     with http_errors():
-        service.check_installable(model_id)
-
-    paused = job_store.unfinished_for(model_id)
-    job = job_store.create(model_id, progress_pct=(paused.progress_pct or 0.0) if paused else 0.0)
-    background_tasks.add_task(_run_download, job.job_id, model_id)
+        job = service.start_install(model_id, background_tasks.add_task)
     return DownloadStartResponse(job_id=job.job_id)
 
 

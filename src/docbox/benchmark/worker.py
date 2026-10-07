@@ -19,13 +19,12 @@ process that started it (which on Windows would lock their files).
 OCR libraries print progress and warnings to stdout; the events go to a private copy of
 the original stdout and everything else printed is sent to stderr.
 
-DOCBOX_PRELOAD (comma-separated module names) is imported first, so models registered
-outside the built-in catalog (tests, plugins) can run here too.
+Modules named in DOCBOX_PRELOAD are imported first (docbox/plugins.py), so models
+registered outside the built-in catalog can run here too.
 """
 
 from __future__ import annotations
 
-import importlib
 import json
 import mimetypes
 import os
@@ -50,8 +49,9 @@ def main() -> int:
         proto.flush()
 
     job = json.loads(sys.stdin.read())
-    for module in filter(None, os.environ.get("DOCBOX_PRELOAD", "").split(",")):
-        importlib.import_module(module.strip())
+    from docbox import plugins
+
+    plugins.load()
 
     from docbox.backend.core.pages import iter_pages
     from docbox.service import ocr

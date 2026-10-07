@@ -5,12 +5,12 @@ from __future__ import annotations
 import argparse
 import sys
 
-from docbox import __version__
-from docbox.cli.commands import bench, device, engines, models, read, settings
+from docbox import __version__, plugins
+from docbox.cli.commands import bench, device, engines, mcp, models, read, settings
 from docbox.cli.output import EXIT_ERROR, EXIT_USAGE, Output, exit_code
 from docbox.service.errors import ServiceError
 
-_GROUPS = (device, models, engines, read, bench, settings)
+_GROUPS = (device, models, engines, read, bench, settings, mcp)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,6 +45,7 @@ def main(argv: list[str] | None = None) -> int:
         return exc.code if isinstance(exc.code, int) else EXIT_USAGE
     out = Output(as_json=bool(getattr(args, "json", False)))
     try:
+        plugins.load()
         return args.func(args, out) or 0
     except ServiceError as exc:
         out.end_progress()
