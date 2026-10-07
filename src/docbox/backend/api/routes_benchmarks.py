@@ -13,6 +13,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 
 from docbox.backend.api.errors import http_errors
 from docbox.benchmark import store
+from docbox.benchmark.reference import ReferenceData, reference
 from docbox.benchmark.report import PageView
 from docbox.benchmark.store import BenchRun
 from docbox.service import benchmarks as service
@@ -71,6 +72,13 @@ def start_benchmark(
 @router.get("", response_model=list[BenchRun])
 def list_benchmarks() -> list[BenchRun]:
     return service.list_runs()
+
+
+# Before /{run_id}, which would otherwise take "reference" as a run id.
+@router.get("/reference", response_model=ReferenceData)
+def get_reference() -> ReferenceData:
+    """Published OCRBench v1/v2 scores for catalog models, for the benchmark graph."""
+    return reference()
 
 
 @router.get("/{run_id}", response_model=BenchRun)

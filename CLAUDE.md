@@ -343,7 +343,14 @@ The Benchmarks view (`BenchmarksView.tsx`: drop zone, model picker, batch cards;
 `BenchmarkRun.tsx`: leaderboard and Compare) talks to `/api/benchmarks`
 (`api/routes_benchmarks.py`). Uploads are sent with their folder path as the multipart
 file name so `.gt.txt` sidecars land next to their documents in the run's `inputs/`; the
-route sanitises those paths. Runs from the CLI and MCP appear there too (same data dir).
+route sanitises those paths. Runs from the CLI and MCP appear there too (same data dir). `BenchmarkChart.tsx` is the
+accuracy-vs-cost scatter (hand-built SVG, no chart library): "This run" plots the run's
+leaderboard with a Pareto line; "OCRBench v1/v2" plots published scores from
+`benchmark/ocrbench.json` (served at `/api/benchmarks/reference`) against catalog download
+size, without ranking them, since sources differ. Every score there needs a source URL and a
+`self_reported` flag; `tests/benchmark/test_reference.py` checks they name catalog models.
+Scatter colours: at most three series hues (`--color-series-1..3`, validated all-pairs for
+colour-blind readers) plus a neutral; every point is also labelled.
 
 Every engine implements `delete()`; PaddleOCR's keeps model dirs another *downloaded*
 catalog entry still uses (all PP-OCRv5 language families share `PP-OCRv5_server_det`).

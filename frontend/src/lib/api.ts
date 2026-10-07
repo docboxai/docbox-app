@@ -239,6 +239,33 @@ export interface PageView {
   reads: PageRead[];
 }
 
+// Published OCRBench scores (backend benchmark/ocrbench.json), for the benchmark graph.
+export interface ReferenceScoreV1 {
+  value: number;
+  self_reported: boolean;
+  source: string;
+  url: string;
+}
+
+export interface ReferenceScoreV2 {
+  en: number | null;
+  zh: number | null;
+  self_reported: boolean;
+  source: string;
+  url: string;
+}
+
+export interface ReferenceData {
+  benchmarks: Record<"ocrbench_v1" | "ocrbench_v2", { name: string; max: number; about: string; url: string; splits: string[] }>;
+  models: {
+    model_id: string;
+    label: string;
+    scores: { ocrbench_v1: ReferenceScoreV1 | null; ocrbench_v2: ReferenceScoreV2 | null };
+  }[];
+  notes: string[];
+  checked: string;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1e6) return `${Math.round(bytes / 1e3)} KB`;
   if (bytes < 1e9) return `${Math.round(bytes / 1e6)} MB`;
@@ -361,6 +388,7 @@ export const api = {
     return request<BenchRun>("/api/benchmarks", { method: "POST", body: form });
   },
   listBenchmarks: () => request<BenchRun[]>("/api/benchmarks"),
+  benchmarkReference: () => request<ReferenceData>("/api/benchmarks/reference"),
   getBenchmark: (id: string) => request<BenchRun>(`/api/benchmarks/${id}`),
   benchmarkPage: (id: string, fileId: string, page: number, against?: string) => {
     const q = new URLSearchParams({ file_id: fileId, page: String(page) });
