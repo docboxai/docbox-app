@@ -44,7 +44,7 @@ interface Point {
 // Short names for point labels ("PaddleOCR Balanced — Chinese + English" -> "PaddleOCR
 // Balanced"); the tooltip keeps the full name.
 const ENGINE_NAMES = new Set(["PaddleOCR", "Tesseract", "EasyOCR", "Ollama", "NVIDIA NIM"]);
-function shortName(name: string): string {
+export function shortName(name: string): string {
   const [head, tail] = name.split(" — ");
   if (!tail) return name;
   return ENGINE_NAMES.has(head) ? `${head} ${tail}` : head;
