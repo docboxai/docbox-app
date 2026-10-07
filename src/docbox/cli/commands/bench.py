@@ -24,8 +24,9 @@ def register(sub, common) -> None:
         "invoice.p2.gt.txt (one page) next to invoice.pdf, or pass a manifest .json/.jsonl.",
     )
     run.add_argument("sources", nargs="+", help="files, folders or manifests")
-    run.add_argument("--models", "-m",
-                     help="comma-separated model ids (default: every model that's ready)")
+    run.add_argument("--models", "-m", action="append",
+                     help="model ids, comma-separated or repeated "
+                          "(default: every model that's ready)")
     run.add_argument("--name", help="name for this run")
     run.add_argument("--recursive", "-r", action="store_true", help="include subfolders")
     run.add_argument("--install-missing", action="store_true",
@@ -96,7 +97,7 @@ def _print_run(run: BenchRun) -> None:
 def _run(args, out: Output) -> int:
     config = service.BenchConfig(
         sources=args.sources,
-        models=[m.strip() for m in (args.models or "").split(",") if m.strip()],
+        models=[m.strip() for v in args.models or [] for m in v.split(",") if m.strip()],
         name=args.name, recursive=args.recursive, install_missing=args.install_missing,
         ignore_case=args.ignore_case, page_timeout=args.page_timeout, source="cli",
     )
