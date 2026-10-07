@@ -3,6 +3,7 @@ installing (engine packages, then weights) and removing."""
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
 
 import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
@@ -188,6 +189,53 @@ def _install(spec: ModelSpec, progress: InstallProgress, should_pause: Callable[
         stage_progress("downloading", weights_from, 100, progress, should_pause)
     )
     progress("done", 100.0, "ready")
+
+
+def _run_install_job(job_id: str, model_id: str) -> None:
+    def progress(state: str, pct: float, message: str) -> None:
+        # "done" is reported last, below, once the whole job has finished.
+        job_store.update(job_id, state=None if state == "done" else state,
+                         progress_pct=pct, message=message)
+
+    try:
+        install_model(model_id, progress, should_pause=lambda: job_store.pause_requested(job_id))
+        job_store.update(job_id, state="done", progress_pct=100.0, message="ready")
+    except JobPaused:
+        job_store.update(job_id, state="paused", message="paused")
+    except Exception as exc:  # noqa: BLE001 — reported on the job, polled by the caller
+        job_store.update(job_id, state="error", message=getattr(exc, "detail", str(exc)))
+
+
+def start_install(
+    model_id: str, run_in_background: Callable[[Callable[[], None]], None] | None = None,
+) -> DownloadStatus:
+    """Start installing a model on a background job and return it at once; poll it with
+    install_status(). A second start while one is running rejoins that job; starting a
+    paused one resumes it. `run_in_background` defaults to a new daemon thread (the HTTP
+    route passes FastAPI's background tasks instead)."""
+    resolve(model_id)
+    active = job_store.active_for(model_id)
+    if active is not None:
+        return job_status(active)
+    check_installable(model_id)
+    paused = job_store.unfinished_for(model_id)
+    job = job_store.create(model_id, progress_pct=(paused.progress_pct or 0.0) if paused else 0.0)
+
+    def work() -> None:
+        _run_install_job(job.job_id, model_id)
+
+    if run_in_background is None:
+        threading.Thread(target=work, name=f"docbox-install-{model_id}", daemon=True).start()
+    else:
+        run_in_background(work)
+    return job_status(job)
+
+
+def install_status(job_id: str) -> DownloadStatus:
+    job = job_store.get(job_id)
+    if job is None:
+        raise NotFound(f"Unknown install job: {job_id}")
+    return job_status(job)
 
 
 def remove_model(model_id: str) -> None:

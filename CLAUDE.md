@@ -247,6 +247,18 @@ compare view with diff spans ("slips"). `service/benchmarks.py` is the front-end
 Tests use fake engines in `tests/benchmark/bench_fakes.py`, loaded into workers through
 `DOCBOX_PRELOAD`.
 
+### MCP server (`src/docbox/mcp_server.py`)
+
+`docbox mcp` serves an MCP server over stdio (official `mcp` SDK 2.x: `MCPServer`, not the
+1.x `FastMCP`). Tools are plain sync functions over `service/` (the SDK runs them on worker
+threads and diverts stray stdout writes, so a chatty OCR library can't corrupt the
+protocol); `ServiceError`s become `ToolError("<code>: <detail>")`. Long work returns an id
+to poll (`install_model` → `get_install_status`, `start_benchmark` → `get_benchmark`). Mark
+new tools with the right `ToolAnnotations` (`_DELETES` for anything that removes files).
+`docs/agents.md` is the user-facing guide; keep it in step with the tool list.
+`DOCBOX_PRELOAD` (`docbox/plugins.py`) imports extra model-registering modules in every
+process (CLI, MCP server, benchmark workers); tests rely on it.
+
 ### The "never silently install untrusted binaries" rule
 
 System-level programs (Tesseract, Ollama) are never installed without the user's
