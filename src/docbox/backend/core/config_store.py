@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import platformdirs
+from filelock import FileLock
 
 _APP_NAME = "DocBox"
 _APP_AUTHOR = "docbox"
@@ -35,7 +36,28 @@ def _read() -> dict[str, Any]:
 
 
 def _write(data: dict[str, Any]) -> None:
-    _settings_path().write_text(json.dumps(data, indent=2), encoding="utf-8")
+    path = _settings_path()
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def _locked() -> FileLock:
+    # The app's backend, the CLI and the MCP server can all change settings: each change
+    # is a read-modify-write under this lock so one doesn't undo another's.
+    return FileLock(_settings_path().with_suffix(".lock"), timeout=30)
+
+
+def _update(**changes: Any) -> None:
+    """Set keys (a value of None removes the key)."""
+    with _locked():
+        data = _read()
+        for key, value in changes.items():
+            if value is None:
+                data.pop(key, None)
+            else:
+                data[key] = value
+        _write(data)
 
 
 def get_nvidia_api_key() -> str | None:
@@ -43,15 +65,11 @@ def get_nvidia_api_key() -> str | None:
 
 
 def set_nvidia_api_key(api_key: str) -> None:
-    data = _read()
-    data["nvidia_nim_api_key"] = api_key
-    _write(data)
+    _update(nvidia_nim_api_key=api_key)
 
 
 def clear_nvidia_api_key() -> None:
-    data = _read()
-    data.pop("nvidia_nim_api_key", None)
-    _write(data)
+    _update(nvidia_nim_api_key=None)
 
 
 def get_default_model_id() -> str | None:
@@ -59,12 +77,7 @@ def get_default_model_id() -> str | None:
 
 
 def set_default_model_id(model_id: str | None) -> None:
-    data = _read()
-    if model_id:
-        data["default_model_id"] = model_id
-    else:
-        data.pop("default_model_id", None)
-    _write(data)
+    _update(default_model_id=model_id or None)
 
 
 def cloud_enabled() -> bool:
@@ -77,9 +90,7 @@ def cloud_enabled() -> bool:
 
 
 def set_cloud_enabled(enabled: bool) -> None:
-    data = _read()
-    data["cloud_enabled"] = enabled
-    _write(data)
+    _update(cloud_enabled=enabled)
 
 
 def get_output_dir() -> Path:
@@ -90,9 +101,4 @@ def get_output_dir() -> Path:
 
 
 def set_output_dir(path: str | None) -> None:
-    data = _read()
-    if path:
-        data["output_dir"] = path
-    else:
-        data.pop("output_dir", None)
-    _write(data)
+    _update(output_dir=path or None)

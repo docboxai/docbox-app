@@ -261,6 +261,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "filelock" },
     { name = "packaging" },
     { name = "pillow" },
     { name = "platformdirs" },
@@ -298,6 +299,7 @@ dev = [
 requires-dist = [
     { name = "easyocr", marker = "extra == 'easyocr'", specifier = ">=1.7" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "filelock", specifier = ">=3.15" },
     { name = "opencv-contrib-python", marker = "extra == 'easyocr'" },
     { name = "packaging", specifier = ">=23" },
     { name = "paddleocr", marker = "extra == 'paddle'", specifier = ">=2.9" },

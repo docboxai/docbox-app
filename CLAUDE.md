@@ -82,6 +82,14 @@ calls `/api` on the page's own origin and Vite's dev/preview server proxies it t
 `http://127.0.0.1:8756` (override with `DOCBOX_BACKEND_URL`) — start the backend standalone
 alongside it. Same-origin, so the backend's CORS allowlist doesn't apply there.
 
+### CLI (`docbox`)
+
+```sh
+uv run docbox --help
+uv run docbox models list --json
+uv run docbox read invoice.pdf --model paddleocr-mobile-en --format md
+```
+
 ### Tests and lint
 
 ```sh
@@ -198,6 +206,30 @@ third-party actions are pinned to commits and the Tauri CLI to an exact version.
 The frontend's `UpdateBanner` calls the `prepare_restart` command (stop the backend)
 before `update.install()`, because the Windows updater exits the app without the normal
 close handling.
+
+### The service layer: one implementation behind the app, the CLI and MCP
+
+`src/docbox/service/` holds the operations (models, engines, device, settings, reading
+files) as plain functions with no FastAPI imports. The HTTP routes (`backend/api/`), the
+`docbox` CLI (`src/docbox/cli/`, argparse) and the MCP server are thin front ends over it.
+Failures are `service.errors.ServiceError` subclasses: routes map `.status` to an HTTP code
+via `api/errors.py::http_errors()`, the CLI maps them to exit codes (`cli/output.py`: 3 needs
+an external program, 4 blocked) and `{"error": {"code", "detail"}}` on stderr with `--json`.
+Put new behaviour in `service/`, not in a route, so every front end gets it.
+
+The CLI runs engines in-process and shares the desktop app's data dir: `paths.get_data_dir()`
+is `DOCBOX_DATA_DIR`, else the app's folder (`io.github.docboxai.docbox`, Tauri's
+`app_local_data_dir`) when it exists, else platformdirs'. Because several processes can now
+write it, read history and settings take cross-process file locks (`core/locks.py`,
+`filelock`), and installing a model holds a per-model lock (a second process gets
+`Conflict`). `core/runtime.py` has a third mode, `tool` (a standalone `uv tool install` /
+pip install with no project to sync): extras go in with `uv pip install` pinned by
+`core/pins/constraints.txt`, exported from `uv.lock` by `scripts/export_pins.sh`; rerun it
+whenever `uv.lock` changes (`tests/service/test_shared_state.py` fails when it's stale).
+
+Tests: `tests/conftest.py` provides `data_dir` (temp `DOCBOX_DATA_DIR`) and `fake_model` /
+`installed_fake` (a registered `test-fake` model that reads instantly), and the CLI is run
+in-process with `docbox.cli.main.main(argv)`.
 
 ### The "never silently install untrusted binaries" rule
 
