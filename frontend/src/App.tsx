@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, formatBytes } from "./lib/api";
 import { AppProvider, useApp, type ViewId } from "./lib/app";
 import { formatGb, plural } from "./lib/format";
+import { shortName } from "./components/BenchmarkChart";
 import { BenchmarksView } from "./components/BenchmarksView";
 import { BootGate } from "./components/BootScreen";
 import { DeviceView } from "./components/DeviceView";
@@ -55,7 +56,7 @@ function useHeroStat(view: ViewId): HeroStat | null {
         (list) => {
           const done = list.find((r) => r.state === "done" && r.summary?.best_model_id);
           const best = done?.summary?.leaderboard.find((r) => r.model_id === done.summary?.best_model_id);
-          setBenches({ runs: list.length, best: best?.name ?? null });
+          setBenches({ runs: list.length, best: best ? shortName(best.name) : null });
         },
         () => setBenches(null),
       );
@@ -79,7 +80,7 @@ function useHeroStat(view: ViewId): HeroStat | null {
     case "bench":
       return benches == null
         ? null
-        : { value: plural(benches.runs, "batch", "batches"), label: benches.best ? `latest best: ${benches.best}` : "every page, every model" };
+        : { value: plural(benches.runs, "batch", "batches"), label: benches.best ? `best: ${benches.best}` : "every page, every model" };
     case "platforms":
       return connected == null ? null : { value: `${connected} of 2`, label: "services connected" };
     case "device":
@@ -91,15 +92,21 @@ function Shell() {
   const { view } = useApp();
   const page = PAGES[view];
   const stat = useHeroStat(view);
+  const mainRef = useRef<HTMLElement>(null);
+
+  // A new page starts at its top, not wherever the last one was scrolled to.
+  useEffect(() => {
+    mainRef.current?.scrollTo({ top: 0 });
+  }, [view]);
 
   return (
     <Frame banner={<UpdateBanner />}>
       {/* A scroll container clips anything painted outside its children: focus outlines
           (2px + 2px offset) and the selected card's ring. -m-1 p-1 gives them those 4px
           without moving the layout. */}
-      <main className="-m-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-1">
+      <main ref={mainRef} className="-m-1 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-1">
         <Hero eyebrow={page.eyebrow} title={page.title} stat={stat} />
-        <div className="shrink-0">
+        <div key={view} className="view-enter shrink-0">
           {view === "setup" && <SetupView />}
           {view === "models" && <ModelsView />}
           {view === "ocr" && <OcrView />}

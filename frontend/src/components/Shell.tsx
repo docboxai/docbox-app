@@ -80,12 +80,14 @@ export interface HeroStat {
 
 function HardwareChart({ stat }: { stat: HeroStat | null }) {
   return (
-    <div className="hidden shrink-0 flex-col gap-2 lg:flex">
-      <div className="h-[23px] pl-[262px]">
+    // Fixed width, and the pill grows leftward from the right edge, so a long stat never
+    // moves the bars: they sit in the same place on every page.
+    <div className="hidden w-[444px] shrink-0 flex-col gap-2 lg:flex">
+      <div className="relative h-[23px]">
         {stat && (
-          <div className="inline-flex items-center gap-1.5 rounded-full bg-ink px-2.5 py-1 text-[11px] whitespace-nowrap">
-            <span className="font-semibold text-fg">{stat.value}</span>
-            <span className="text-fg-muted">{stat.label}</span>
+          <div className="absolute right-0 bottom-0 inline-flex max-w-full items-center gap-1.5 rounded-full bg-ink px-2.5 py-1 text-[11px] whitespace-nowrap">
+            <span className="shrink-0 font-semibold text-fg">{stat.value}</span>
+            <span className="truncate text-fg-muted">{stat.label}</span>
           </div>
         )}
       </div>
@@ -112,7 +114,7 @@ export function Hero({
   stat: HeroStat | null;
 }) {
   return (
-    <header className="flex min-h-[300px] flex-1 flex-col justify-between gap-8 rounded-[20px] bg-hero px-7 pt-6 pb-7 text-on-light">
+    <header className="flex h-[300px] shrink-0 flex-col justify-between gap-8 rounded-[20px] bg-hero px-7 pt-6 pb-7 text-on-light">
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-2.5">
           <LogoTile />

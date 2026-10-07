@@ -76,3 +76,14 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Page content eases in when switching views (the header stays put). */
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.view-enter {
+  animation: view-enter 180ms ease-out;
+}
