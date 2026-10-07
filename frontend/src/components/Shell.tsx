@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { Box, FileText, Monitor, Plug, SlidersHorizontal } from "lucide-react";
+import { Box, FileText, Gauge, Monitor, Plug, SlidersHorizontal } from "lucide-react";
 import { useApp, type ViewId } from "../lib/app";
 import { LogoTile } from "./Logo";
 import { Switch, cx } from "./ui";
@@ -9,6 +9,7 @@ const NAV_ITEMS: { id: ViewId; label: string; icon: LucideIcon }[] = [
   { id: "setup", label: "Setup", icon: SlidersHorizontal },
   { id: "models", label: "Models", icon: Box },
   { id: "ocr", label: "Read a file", icon: FileText },
+  { id: "bench", label: "Benchmarks", icon: Gauge },
   { id: "platforms", label: "Connections", icon: Plug },
   { id: "device", label: "This device", icon: Monitor },
 ];

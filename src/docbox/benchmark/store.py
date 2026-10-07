@@ -179,6 +179,11 @@ def delete(run_id: str) -> None:
     shutil.rmtree(d)
 
 
+def delete_folder(run_id: str) -> None:
+    """Remove a run's folder whether or not it got as far as saving run.json."""
+    shutil.rmtree(run_dir(run_id), ignore_errors=True)
+
+
 def save_references(run_id: str, refs: References) -> None:
     (run_dir(run_id) / "references.json").write_text(refs.model_dump_json(), encoding="utf-8")
 

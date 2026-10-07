@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, formatBytes } from "./lib/api";
 import { AppProvider, useApp, type ViewId } from "./lib/app";
 import { formatGb, plural } from "./lib/format";
+import { BenchmarksView } from "./components/BenchmarksView";
 import { BootGate } from "./components/BootScreen";
 import { DeviceView } from "./components/DeviceView";
 import { ModelsView } from "./components/ModelsView";
@@ -15,6 +16,7 @@ const PAGES: Record<ViewId, { eyebrow: string; title: string }> = {
   setup: { eyebrow: "STEP 1 OF 3", title: "Choose an engine" },
   models: { eyebrow: "STEP 2 OF 3", title: "Your models" },
   ocr: { eyebrow: "STEP 3 OF 3", title: "Read a file" },
+  bench: { eyebrow: "THE LOCAL OCR TEST BENCH", title: "Benchmarks" },
   platforms: { eyebrow: "OUTSIDE PROGRAMS", title: "Connections" },
   device: { eyebrow: "HARDWARE", title: "This device" },
 };
@@ -35,6 +37,7 @@ function useHeroStat(view: ViewId): HeroStat | null {
   const [modelsBytes, setModelsBytes] = useState<number | null>(null);
   const [reads, setReads] = useState<{ done: number; cloud: number } | null>(null);
   const [connected, setConnected] = useState<number | null>(null);
+  const [benches, setBenches] = useState<{ runs: number; best: string | null } | null>(null);
 
   useEffect(() => {
     if (view === "models") {
@@ -46,6 +49,15 @@ function useHeroStat(view: ViewId): HeroStat | null {
           setReads({ done: done.length, cloud: done.filter((r) => r.model_id.startsWith("nvidia-nim:")).length });
         },
         () => setReads(null),
+      );
+    } else if (view === "bench") {
+      api.listBenchmarks().then(
+        (list) => {
+          const done = list.find((r) => r.state === "done" && r.summary?.best_model_id);
+          const best = done?.summary?.leaderboard.find((r) => r.model_id === done.summary?.best_model_id);
+          setBenches({ runs: list.length, best: best?.name ?? null });
+        },
+        () => setBenches(null),
       );
     } else if (view === "platforms") {
       api.listPlatforms().then((list) => setConnected(list.filter((p) => p.available).length), () => setConnected(null));
@@ -64,6 +76,10 @@ function useHeroStat(view: ViewId): HeroStat | null {
             value: `${plural(reads.done, "file")} read`,
             label: reads.cloud ? `${reads.cloud} through the cloud` : "all on this computer",
           };
+    case "bench":
+      return benches == null
+        ? null
+        : { value: plural(benches.runs, "batch", "batches"), label: benches.best ? `latest best: ${benches.best}` : "every page, every model" };
     case "platforms":
       return connected == null ? null : { value: `${connected} of 2`, label: "services connected" };
     case "device":
@@ -87,6 +103,7 @@ function Shell() {
           {view === "setup" && <SetupView />}
           {view === "models" && <ModelsView />}
           {view === "ocr" && <OcrView />}
+          {view === "bench" && <BenchmarksView />}
           {view === "platforms" && <PlatformsView />}
           {view === "device" && <DeviceView />}
         </div>

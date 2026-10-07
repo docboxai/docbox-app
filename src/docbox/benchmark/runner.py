@@ -15,6 +15,7 @@ import json
 import mimetypes
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -53,6 +54,8 @@ class BenchConfig:
     install_missing: bool = False
     ignore_case: bool = False
     source: str = "cli"
+    # Set when the caller already made the run's folder (the app saves uploads into it).
+    run_id: str | None = None
     page_timeout: float = PAGE_TIMEOUT_S
     load_timeout: float = LOAD_TIMEOUT_S
 
@@ -92,7 +95,7 @@ def create(config: BenchConfig) -> BenchRun:
 
     pages_total = sum(f.pages for f in files)
     run = BenchRun(
-        id=store.new_id(),
+        id=config.run_id or store.new_id(),
         name=config.name or data.name or f"{len(files)} file{'s' * (len(files) != 1)}",
         created_at=time.time(),
         ignore_case=config.ignore_case,
@@ -107,7 +110,39 @@ def create(config: BenchConfig) -> BenchRun:
 
 
 def start_in_background(config: BenchConfig) -> BenchRun:
-    run = create(config)
+    return _launch(create(config), config)
+
+
+def rerun(run_id: str, source: str) -> BenchRun:
+    """The same files, references and models again, as a new run."""
+    old = store.load(run_id)
+    missing = [f.path for f in old.files if not Path(f.path).is_file()]
+    if missing:
+        raise Invalid(f"Some files are gone: {', '.join(missing[:3])}")
+    new_id = store.new_id()
+    old_dir = store.run_dir(old.id).resolve()
+    files = []
+    for f in old.files:
+        path = Path(f.path)
+        if path.resolve().is_relative_to(old_dir):
+            # Uploaded with the old run: copy it, so deleting that run leaves this one whole.
+            target = store.inputs_dir(new_id) / path.resolve().relative_to(old_dir / "inputs")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, target)
+            path = target
+        files.append(f.model_copy(update={"path": str(path)}))
+    run = BenchRun(
+        id=new_id, name=old.name, created_at=time.time(),
+        ignore_case=old.ignore_case, source=source, files=files,
+        models=[ModelRun(model_id=m.model_id, name=m.name) for m in old.models],
+        pages_total=old.pages_total,
+    )
+    store.save(run)
+    store.save_references(run.id, store.load_references(old.id))
+    return _launch(run, BenchConfig(sources=[]))
+
+
+def _launch(run: BenchRun, config: BenchConfig) -> BenchRun:
     run.pid = os.getpid()  # so a reader in another process can tell it's alive
     store.save(run)
     threading.Thread(
