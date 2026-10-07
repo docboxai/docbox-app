@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Download, RotateCw, Square, Trash2, X } from
 import { api, type BenchRun, type DiffSpan, type LeaderboardRow, type PageView } from "../lib/api";
 import { useApp } from "../lib/app";
 import { formatMb, plural } from "../lib/format";
+import { BenchmarkChart } from "./BenchmarkChart";
 import { Button, Card, Chip, Notice, ProgressBar, SectionLabel, Spinner, cx } from "./ui";
 
 const POLL_MS = 1000;
@@ -427,6 +428,7 @@ export function BenchmarkRun({
             No reference text, so models are ranked by speed. Add <code className="text-fg">name.gt.txt</code> files with the correct text to rank by accuracy.
           </p>
         )}
+        <BenchmarkChart run={run} />
         <Leaderboard run={run} />
         <Compare run={run} />
       </div>

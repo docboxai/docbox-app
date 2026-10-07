@@ -1,0 +1,94 @@
+{
+  "benchmarks": {
+    "ocrbench_v1": {
+      "name": "OCRBench v1",
+      "max": 1000,
+      "about": "1,000 questions over text recognition, scene-text VQA, document VQA, key information extraction and handwritten math. Score out of 1,000.",
+      "url": "https://github.com/Yuliang-Liu/MultimodalOCR"
+    },
+    "ocrbench_v2": {
+      "name": "OCRBench v2",
+      "max": 100,
+      "splits": ["en", "zh"],
+      "about": "Recognition, referring, spotting, extraction, parsing, calculation, understanding and reasoning; English and Chinese tracks, average score out of 100.",
+      "url": "https://99franklin.github.io/ocrbench_v2/"
+    }
+  },
+  "models": [
+    {
+      "model_id": "ollama:granite3.2-vision:2b",
+      "label": "Granite Vision 3.2 2B",
+      "scores": {
+        "ocrbench_v1": {
+          "value": 770,
+          "self_reported": true,
+          "source": "IBM model card (reported as 0.77)",
+          "url": "https://huggingface.co/ibm-granite/granite-vision-3.2-2b"
+        }
+      }
+    },
+    {
+      "model_id": "ollama:qwen2.5vl:3b",
+      "label": "Qwen2.5-VL 3B",
+      "scores": {
+        "ocrbench_v1": {
+          "value": 797,
+          "self_reported": true,
+          "source": "Qwen2.5-VL Technical Report, Table 5",
+          "url": "https://arxiv.org/abs/2502.13923"
+        },
+        "ocrbench_v2": {
+          "en": 54.3,
+          "zh": 52.1,
+          "self_reported": true,
+          "source": "Qwen2.5-VL Technical Report, Table 5 (not on the official leaderboard)",
+          "url": "https://arxiv.org/abs/2502.13923"
+        }
+      }
+    },
+    {
+      "model_id": "ollama:minicpm-v:8b",
+      "label": "MiniCPM-V 2.6 8B",
+      "scores": {
+        "ocrbench_v1": {
+          "value": 852,
+          "self_reported": true,
+          "source": "MiniCPM-V 2.6 evaluation table (chain-of-thought prompting)",
+          "url": "https://github.com/OpenBMB/MiniCPM-o/blob/main/docs/minicpm_v2dot6_en.md"
+        },
+        "ocrbench_v2": {
+          "en": 33.0,
+          "zh": 47.7,
+          "self_reported": false,
+          "source": "OCRBench v2 leaderboard, 2025.09 public set",
+          "url": "https://99franklin.github.io/ocrbench_v2/"
+        }
+      }
+    },
+    {
+      "model_id": "ollama:qwen2.5vl:7b",
+      "label": "Qwen2.5-VL 7B",
+      "scores": {
+        "ocrbench_v1": {
+          "value": 864,
+          "self_reported": true,
+          "source": "Qwen2.5-VL Technical Report, Table 5",
+          "url": "https://arxiv.org/abs/2502.13923"
+        },
+        "ocrbench_v2": {
+          "en": 41.8,
+          "zh": 49.5,
+          "self_reported": false,
+          "source": "OCRBench v2 leaderboard, 2025.09 public set",
+          "url": "https://99franklin.github.io/ocrbench_v2/"
+        }
+      }
+    }
+  ],
+  "notes": [
+    "Published scores are for the models' full-precision weights; Ollama runs 4-bit quantised builds, so DocBox's copies may score lower.",
+    "Self-reported scores come from the model's makers and can differ from the official leaderboard: Qwen2.5-VL 7B reports 56.3 on OCRBench v2 English, the leaderboard measured 41.8.",
+    "OCRBench covers vision-language models only; Tesseract, the PaddleOCR pipelines and EasyOCR have no OCRBench score."
+  ],
+  "checked": "2026-10-07"
+}

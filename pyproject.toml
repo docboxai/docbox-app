@@ -69,6 +69,8 @@ where = ["src"]
 [tool.setuptools.package-data]
 # Engine package pins for standalone installs (scripts/export_pins.sh).
 "docbox.backend.core" = ["pins/*.txt"]
+# Published OCRBench scores for the benchmark graph.
+"docbox.benchmark" = ["ocrbench.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
