@@ -146,6 +146,99 @@ export interface ReadDetail extends ReadSummary {
   text: string;
 }
 
+// Benchmarks (backend benchmark/store.py and report.py).
+export type BenchState = "queued" | "running" | "done" | "error" | "cancelled" | "interrupted";
+export type ModelRunState = "pending" | "installing" | "running" | "done" | "error" | "skipped";
+
+export interface BenchFile {
+  id: string;
+  path: string;
+  pages: number;
+  has_reference: boolean;
+}
+
+export interface ModelRun {
+  model_id: string;
+  name: string;
+  state: ModelRunState;
+  error: string | null;
+  load_seconds: number | null;
+  peak_memory_mb: number | null;
+}
+
+export interface LeaderboardRow {
+  model_id: string;
+  name: string;
+  rank: number | null;
+  pages_read: number;
+  pages_failed: number;
+  load_seconds: number | null;
+  seconds_per_page: number | null;
+  median_seconds_per_page: number | null;
+  peak_memory_mb: number | null;
+  mean_confidence: number | null;
+  // Only with reference text; accuracy is 1 - cer.
+  cer: number | null;
+  wer: number | null;
+  accuracy: number | null;
+  scored_chars: number;
+}
+
+export interface BenchSummary {
+  ranked_by: "cer" | "speed";
+  leaderboard: LeaderboardRow[];
+  best_model_id: string | null;
+}
+
+export interface BenchRun {
+  id: string;
+  name: string;
+  created_at: number;
+  finished_at: number | null;
+  state: BenchState;
+  error: string | null;
+  ignore_case: boolean;
+  // "app" | "cli" | "mcp"
+  source: string;
+  files: BenchFile[];
+  models: ModelRun[];
+  pages_total: number;
+  pages_done: number;
+  current_model_id: string | null;
+  summary: BenchSummary | null;
+}
+
+// Relative to the reference: kept text, text the model added, reference text it missed,
+// or reference text it replaced.
+export interface DiffSpan {
+  op: "equal" | "insert" | "delete" | "replace";
+  text: string;
+  reference: string;
+}
+
+export interface PageRead {
+  model_id: string;
+  name: string;
+  text: string;
+  error: string | null;
+  seconds: number | null;
+  mean_confidence: number | null;
+  slips: number | null;
+  cer: number | null;
+  diff: DiffSpan[];
+}
+
+export interface PageView {
+  run_id: string;
+  file_id: string;
+  page: number;
+  pages: number;
+  reference_kind: "reference" | "model" | "none";
+  reference_model_id: string | null;
+  reference: string | null;
+  reads: PageRead[];
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1e6) return `${Math.round(bytes / 1e3)} KB`;
   if (bytes < 1e9) return `${Math.round(bytes / 1e6)} MB`;
@@ -258,4 +351,27 @@ export const api = {
   readFileUrl: async (id: string) => `${await getBaseUrl()}/api/reads/${id}/file`,
   openRead: (id: string, target: "file" | "folder") =>
     request<void>(`/api/reads/${id}/open?target=${target}`, { method: "POST" }),
+  // Files keep their folder path ("Invoices/march/a.pdf") so sidecar references
+  // (a.gt.txt) stay next to their documents on the backend.
+  startBenchmark: (files: { file: File; path: string }[], modelIds: string[], name: string) => {
+    const form = new FormData();
+    for (const { file, path } of files) form.append("files", file, path);
+    form.append("model_ids", modelIds.join(","));
+    form.append("name", name);
+    return request<BenchRun>("/api/benchmarks", { method: "POST", body: form });
+  },
+  listBenchmarks: () => request<BenchRun[]>("/api/benchmarks"),
+  getBenchmark: (id: string) => request<BenchRun>(`/api/benchmarks/${id}`),
+  benchmarkPage: (id: string, fileId: string, page: number, against?: string) => {
+    const q = new URLSearchParams({ file_id: fileId, page: String(page) });
+    if (against) q.set("against", against);
+    return request<PageView>(`/api/benchmarks/${id}/page?${q}`);
+  },
+  benchmarkImageUrl: async (id: string, fileId: string, page: number) =>
+    `${await getBaseUrl()}/api/benchmarks/${id}/image?${new URLSearchParams({ file_id: fileId, page: String(page) })}`,
+  benchmarkReportUrl: async (id: string, format: "md" | "csv" | "json") =>
+    `${await getBaseUrl()}/api/benchmarks/${id}/report?format=${format}`,
+  cancelBenchmark: (id: string) => request<BenchRun>(`/api/benchmarks/${id}/cancel`, { method: "POST" }),
+  rerunBenchmark: (id: string) => request<BenchRun>(`/api/benchmarks/${id}/rerun`, { method: "POST" }),
+  deleteBenchmark: (id: string) => request<void>(`/api/benchmarks/${id}`, { method: "DELETE" }),
 };

@@ -339,6 +339,12 @@ drops reach the Read a file drop zone. When adding a
 new engine, add its icon/label/capabilities/guidance to the maps in
 `frontend/src/lib/engineMeta.ts` (shared by Setup and Models).
 
+The Benchmarks view (`BenchmarksView.tsx`: drop zone, model picker, batch cards;
+`BenchmarkRun.tsx`: leaderboard and Compare) talks to `/api/benchmarks`
+(`api/routes_benchmarks.py`). Uploads are sent with their folder path as the multipart
+file name so `.gt.txt` sidecars land next to their documents in the run's `inputs/`; the
+route sanitises those paths. Runs from the CLI and MCP appear there too (same data dir).
+
 Every engine implements `delete()`; PaddleOCR's keeps model dirs another *downloaded*
 catalog entry still uses (all PP-OCRv5 language families share `PP-OCRv5_server_det`).
 
