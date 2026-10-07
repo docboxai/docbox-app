@@ -266,6 +266,31 @@ docbox read scans/ --model paddleocr-mobile-en --format md --recursive
 docbox settings set default-model paddleocr-mobile-en
 ```
 
+### Benchmark the models on your own documents
+
+```sh
+docbox bench run invoices/ --models paddleocr-mobile-en,tesseract-eng,paddleocr-balanced
+docbox bench show <run-id>          # leaderboard
+docbox bench page <run-id> invoice.pdf 2   # every model's reading of one page, mistakes marked
+docbox bench report <run-id> -f md  # or csv, json
+```
+
+Each model reads every page in its own process, one model after another, so speed and
+peak memory are measured fairly. Accuracy needs reference text: put `invoice.gt.txt` (the
+whole document) or `invoice.p2.gt.txt` (one page) next to `invoice.pdf`, or list files and
+references in a manifest (`bench.json`):
+
+```json
+{"name": "Invoices", "items": [
+  {"file": "a.pdf", "gt_file": "a.txt"},
+  {"file": "b.png", "gt": "Total due $1,284.00"},
+  {"file": "c.pdf", "pages": [{"page": 2, "gt": "..."}]}
+]}
+```
+
+Without references, models are ranked by speed. Runs are saved in the data folder
+(`benchmarks/`).
+
 It uses the desktop app's models, settings and Recent files when the app is installed.
 Exit codes: `0` ok, `1` error, `2` usage, `3` needs Tesseract or Ollama, `4` blocked (cloud
 engine off).

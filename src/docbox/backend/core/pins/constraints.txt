@@ -65,6 +65,7 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.2.3
 python-multipart==0.0.32
 pyyaml==6.0.2
+rapidfuzz==3.14.6
 requests==2.34.2
 ruamel-yaml==0.19.1
 safetensors==0.8.0
