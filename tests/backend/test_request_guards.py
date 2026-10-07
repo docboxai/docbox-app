@@ -8,12 +8,13 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from docbox.backend.api import routes_engines, routes_models
+from docbox.backend.api import routes_engines
 from docbox.backend.core import history
 from docbox.backend.core.client_header import CLIENT_HEADER
 from docbox.backend.core.jobs import DownloadJobStore, JobPaused, job_store
 from docbox.backend.engines import remote_engine
 from docbox.backend.main import create_app
+from docbox.service import models as service_models
 
 EVIL = "https://evil.example"
 
@@ -128,7 +129,11 @@ def test_building_the_app_leaves_read_history_alone(tmp_path: Path, monkeypatch)
 def test_pause_requested_at_100_percent_does_not_pause() -> None:
     job = job_store.create("test-pause-at-end")
     job_store.request_pause(job.job_id)
-    cb = routes_models._scaled(job.job_id, "downloading", 0, 100)
+    cb = service_models.stage_progress(
+        "downloading", 0, 100,
+        lambda state, pct, msg: job_store.update(job.job_id, progress_pct=pct),
+        lambda: job_store.pause_requested(job.job_id),
+    )
     with pytest.raises(JobPaused):
         cb(50.0, "half")
     cb(100.0, "ready")  # files are in place: finishing must not be reported as paused

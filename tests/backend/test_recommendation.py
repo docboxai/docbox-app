@@ -6,9 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 import docbox.backend.models_catalog  # noqa: F401 — registers the built-in models
-from docbox.backend.api import routes_models
 from docbox.backend.core.registry import ModelSpec, Tier, recommend, registry, runs_smoothly
 from docbox.backend.schemas import DeviceCapabilities
+from docbox.service import models as service_models
 
 
 def _caps(**overrides) -> DeviceCapabilities:
@@ -119,7 +119,7 @@ def test_catalog_never_recommends_a_language_specialist() -> None:
 
 
 def test_listing_flags_exactly_one_recommended_model(client: TestClient, monkeypatch) -> None:
-    monkeypatch.setattr(routes_models, "get_device_capabilities", lambda: _caps())
+    monkeypatch.setattr(service_models, "get_device_capabilities", lambda: _caps())
     body = client.get("/api/models").json()
     assert [m["id"] for m in body if m["recommended"]] == ["paddleocr-balanced"]
     assert client.get("/api/models/paddleocr-balanced").json()["recommended"] is True

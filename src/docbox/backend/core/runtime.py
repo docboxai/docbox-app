@@ -6,12 +6,15 @@ the download job calls `ensure_extra()`, which runs the bundled `uv` against the
 bundled `uv.lock` — same pinned versions on every machine, no pip, no PyPI resolution
 at runtime. Removal re-syncs without that extra, which uninstalls its packages.
 
-Two modes, chosen by `DOCBOX_RUNTIME_MODE` (set by the Tauri shell):
-- "managed" (installed app): env lives in the app's data dir and the project itself
-  isn't installed (its source is on PYTHONPATH), so syncs pass `--no-dev
-  --no-install-project`.
-- anything else (dev checkout, Docker): the repo's own `.venv`; syncs keep the dev group
-  and the editable project.
+Three modes:
+- "managed" (installed app, `DOCBOX_RUNTIME_MODE=managed` from the Tauri shell): env
+  lives in the app's data dir and the project itself isn't installed (its source is on
+  PYTHONPATH), so syncs pass `--no-dev --no-install-project`.
+- "tool" (a standalone `docbox` from `uv tool install` / pip): there's no project or lock
+  file to sync against, so extras are installed with `uv pip install` into this Python,
+  pinned by `pins/constraints.txt` (exported from uv.lock by scripts/export_pins.sh).
+- "dev" (anything else: a checkout, Docker): the repo's own `.venv`; syncs keep the dev
+  group and the editable project.
 
 `state.json` (in the runtime dir) records the installed extras so the Tauri shell can
 re-sync them after an app update ships a new `uv.lock`, and carries removals that had
@@ -81,9 +84,30 @@ def _managed() -> bool:
     return os.environ.get("DOCBOX_RUNTIME_MODE") == "managed"
 
 
-def can_install() -> bool:
+_PINS = Path(__file__).resolve().parent / "pins"
+# PyTorch's CPU-only wheels (the `+cpu` pins); mirrors [[tool.uv.index]] in pyproject.toml.
+_TORCH_CPU_INDEX = "https://download.pytorch.org/whl/cpu"
+
+
+def _has_project() -> bool:
     root = project_dir()
-    return bool(_uv()) and (root / "pyproject.toml").exists() and (root / "uv.lock").exists()
+    return (root / "pyproject.toml").exists() and (root / "uv.lock").exists()
+
+
+def mode() -> str:
+    """"managed", "tool" or "dev" (see the module docstring)."""
+    explicit = os.environ.get("DOCBOX_RUNTIME_MODE")
+    if explicit in ("managed", "tool", "dev"):
+        return explicit
+    return "dev" if _has_project() else "tool"
+
+
+def can_install() -> bool:
+    if not _uv():
+        return False
+    if mode() == "tool":
+        return (_PINS / "constraints.txt").exists()
+    return _has_project()
 
 
 def installed_extras() -> set[str]:
@@ -127,6 +151,36 @@ def sync_command(extras: Iterable[str], *, inexact: bool) -> list[str]:
     for extra in sorted(extras):
         cmd += ["--extra", extra]
     return cmd
+
+
+def _extra_requirements(name: str) -> list[str]:
+    """The requirements the installed `docbox` distribution declares for one extra."""
+    try:
+        declared = importlib.metadata.requires("docbox") or []
+    except importlib.metadata.PackageNotFoundError:
+        return []
+    reqs = []
+    for req_str in declared:
+        req = Requirement(req_str)
+        if req.marker is not None and req.marker.evaluate({"extra": name}) \
+                and not req.marker.evaluate({"extra": ""}):
+            req.marker = None
+            reqs.append(str(req))
+    return reqs
+
+
+def pip_install_command(name: str) -> list[str]:
+    """Tool mode: install one extra's packages into this Python at uv.lock's versions."""
+    reqs = _extra_requirements(name)
+    if not reqs:
+        raise EngineInstallError(f"This docbox install doesn't declare the '{name}' extra")
+    return [
+        _uv() or "uv", "pip", "install", "--python", sys.executable,
+        "--constraints", str(_PINS / "constraints.txt"),
+        "--overrides", str(_PINS / "overrides.txt"),
+        "--extra-index-url", _TORCH_CPU_INDEX, "--index-strategy", "unsafe-best-match",
+        *reqs,
+    ]
 
 
 def run_streaming(
@@ -174,11 +228,14 @@ def ensure_extra(name: str, progress_cb: ProgressCallback) -> None:
     if not can_install():
         raise EngineInstallError(
             f"The {EXTRAS[name][0]} isn't installed and DocBox can't install it here "
-            f"(no `uv` available). Run `uv sync --extra {name}` in the project directory."
+            f"(no `uv` available). Install uv (https://docs.astral.sh/uv/), then retry."
         )
 
-    # --inexact so installing this extra never uninstalls another one.
-    run_streaming(sync_command([name], inexact=True), progress_cb)
+    if mode() == "tool":
+        run_streaming(pip_install_command(name), progress_cb)
+    else:
+        # --inexact so installing this extra never uninstalls another one.
+        run_streaming(sync_command([name], inexact=True), progress_cb)
 
     if not extra_installed(name):
         raise EngineInstallError(f"{EXTRAS[name][0]} installed but still can't be imported")
@@ -203,10 +260,19 @@ def remove_extra(name: str) -> None:
     if not can_install():
         raise EngineInstallError("DocBox can't modify its packages here (no `uv` available).")
 
-    # Exact sync with the remaining extras removes exactly this extra's packages.
-    run_streaming(
-        sync_command(remaining, inexact=False), lambda _p, _m: None, failure="Package removal failed"
-    )
+    if mode() == "tool":
+        # No lock file to sync against: uninstall the packages only this extra needs.
+        run_streaming(
+            [_uv() or "uv", "pip", "uninstall", "--python", sys.executable,
+             *sorted(_exclusive_dists(name))],
+            lambda _p, _m: None, failure="Package removal failed",
+        )
+    else:
+        # Exact sync with the remaining extras removes exactly this extra's packages.
+        run_streaming(
+            sync_command(remaining, inexact=False), lambda _p, _m: None,
+            failure="Package removal failed",
+        )
     _write_state(extras=sorted(installed_extras()), resync_pending=False)
 
 
@@ -235,9 +301,27 @@ def _base_root_dists() -> list[str]:
 
     try:
         data = tomllib.loads((project_dir() / "pyproject.toml").read_text(encoding="utf-8"))
+        return [Requirement(r).name for r in data.get("project", {}).get("dependencies", [])]
     except OSError:
+        pass
+    # Tool mode: no pyproject.toml, but the installed distribution lists the same thing.
+    try:
+        declared = importlib.metadata.requires("docbox") or []
+    except importlib.metadata.PackageNotFoundError:
         return []
-    return [Requirement(r).name for r in data.get("project", {}).get("dependencies", [])]
+    return [
+        r.name for r in map(Requirement, declared)
+        if r.marker is None or r.marker.evaluate({"extra": ""})
+    ]
+
+
+def _exclusive_dists(name: str) -> set[str]:
+    """Distributions only this extra needs: not the base install's, not another
+    installed extra's."""
+    others = set().union(
+        *(_dist_closure(_EXTRA_ROOT_DISTS[e]) for e in installed_extras() if e != name)
+    )
+    return _dist_closure(_EXTRA_ROOT_DISTS[name]) - _dist_closure(_base_root_dists()) - others
 
 
 def _dist_bytes(name: str) -> int:
@@ -258,10 +342,4 @@ def extra_package_bytes(name: str) -> int:
     """Disk used by packages that only this extra needs (shared deps aren't counted)."""
     if not extra_installed(name):
         return 0
-    others = set().union(
-        *(_dist_closure(_EXTRA_ROOT_DISTS[e]) for e in installed_extras() if e != name)
-    )
-    exclusive = (
-        _dist_closure(_EXTRA_ROOT_DISTS[name]) - _dist_closure(_base_root_dists()) - others
-    )
-    return sum(_dist_bytes(d) for d in exclusive)
+    return sum(_dist_bytes(d) for d in _exclusive_dists(name))

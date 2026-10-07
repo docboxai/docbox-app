@@ -22,25 +22,28 @@ from docbox.backend.schemas import OutputFormat, ReadPage
 
 
 class NotRunnable(Exception):
-    def __init__(self, status_code: int, detail: str) -> None:
+    # code: "not_found" | "blocked" (cloud switched off) | "needs_prerequisite" |
+    # "conflict" (engine or weights not installed yet)
+    def __init__(self, status_code: int, detail: str, code: str = "conflict") -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.detail = detail
+        self.code = code
 
 
 def check_runnable(model_id: str) -> ModelSpec:
     """The model's spec, if it can read a file right now; otherwise why not."""
     if platforms.cloud_blocked(model_id):
-        raise NotRunnable(409, "The cloud engine is switched off")
+        raise NotRunnable(409, "The cloud engine is switched off", "blocked")
     try:
         spec = platforms.resolve_spec(model_id)
     except KeyError:
-        raise NotRunnable(404, f"Unknown model: {model_id}") from None
+        raise NotRunnable(404, f"Unknown model: {model_id}", "not_found") from None
     if spec.requires_extra and not runtime.extra_installed(spec.requires_extra):
         raise NotRunnable(409, f"The {runtime.EXTRAS[spec.requires_extra][0]} isn't installed yet")
     if spec.prerequisite and not prerequisites.is_satisfied(spec.prerequisite):
         name = prerequisites.PREREQUISITES[spec.prerequisite]["name"]
-        raise NotRunnable(409, f"{name} needs to be installed and running")
+        raise NotRunnable(409, f"{name} needs to be installed and running", "needs_prerequisite")
     return spec
 
 
@@ -52,6 +55,8 @@ class _Job:
     content_type: str | None
     file_name: str
     output_format: OutputFormat
+    # Where to save the output; None: the output folder from settings.
+    out_dir: Path | None = None
 
 
 _queue: queue.Queue[_Job] = queue.Queue()
@@ -69,6 +74,25 @@ def submit(
     _queue.put(_Job(entry.id, spec.id, data, content_type, file_name, output_format))
     _ensure_worker()
     return entry
+
+
+def read_now(
+    *, file_name: str, data: bytes, content_type: str | None, spec: ModelSpec,
+    output_format: OutputFormat, out_dir: Path | None = None,
+) -> str:
+    """Read one file on the calling thread (the CLI and the MCP server, which wait for the
+    answer) and return its read id. It is recorded in history like a read from the app;
+    errors end up in its history entry, not raised."""
+    entry = history.create(file_name, spec.id, spec.name, output_format)
+    job = _Job(entry.id, spec.id, data, content_type, file_name, output_format, out_dir)
+    try:
+        _read(job)
+    except KeyboardInterrupt:
+        history.update(entry.id, state="cancelled")
+        raise
+    except Exception as exc:  # noqa: BLE001 — recorded like the background worker does
+        history.update(entry.id, state="error", error=str(exc))
+    return entry.id
 
 
 def cancel(read_id: str) -> None:
@@ -146,8 +170,8 @@ def _read(job: _Job) -> None:
 _UNSAFE_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
-def _output_path(file_name: str, ext: str) -> Path:
-    folder = config_store.get_output_dir()
+def _output_path(file_name: str, ext: str, folder: Path | None = None) -> Path:
+    folder = folder or config_store.get_output_dir()
     folder.mkdir(parents=True, exist_ok=True)
     stem = _UNSAFE_NAME.sub("_", Path(file_name).stem).strip(" .") or "document"
     path = folder / f"{stem}.{ext}"
@@ -180,7 +204,7 @@ def render_text(file_name: str, pages: list[ReadPage], fmt: OutputFormat) -> str
 
 
 def _save_output(job: _Job, pages: list[ReadPage], pdf_pages: list[PdfPage]) -> Path:
-    path = _output_path(job.file_name, job.output_format)
+    path = _output_path(job.file_name, job.output_format, job.out_dir)
     if job.output_format == "pdf":
         path.write_bytes(write_searchable_pdf(pdf_pages))
     else:

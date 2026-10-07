@@ -41,6 +41,7 @@ never leave your computer unless you choose the optional NVIDIA cloud engine.
 - [Troubleshooting](#troubleshooting)
 - [Privacy](#privacy)
 - [Development](#development)
+- [Command line](#command-line)
 - [Releasing](#releasing)
 - [Running the backend in Docker](#running-the-backend-in-docker)
 - [License](#license)
@@ -250,6 +251,24 @@ A plain `uv sync` removes extras you didn't pass, so always pass the ones you wa
 
 The logo's source is `src-tauri/icons/logo.svg`; regenerate the icon set with
 `cargo tauri icon src-tauri/icons/logo.svg`.
+
+## Command line
+
+DocBox also works from a terminal, and AI agents can use it the same way (every command
+takes `--json`):
+
+```sh
+uv tool install git+https://github.com/docboxai/docbox-app   # or, from a checkout: uv run docbox
+docbox device                                    # memory, processor, disk, data folder
+docbox models list --fits                        # what runs well here
+docbox models install paddleocr-mobile-en        # engine + model, one step
+docbox read scans/ --model paddleocr-mobile-en --format md --recursive
+docbox settings set default-model paddleocr-mobile-en
+```
+
+It uses the desktop app's models, settings and Recent files when the app is installed.
+Exit codes: `0` ok, `1` error, `2` usage, `3` needs Tesseract or Ollama, `4` blocked (cloud
+engine off).
 
 ## Releasing
 

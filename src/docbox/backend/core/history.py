@@ -10,6 +10,7 @@ import time
 import uuid
 from pathlib import Path
 
+from docbox.backend.core.locks import data_lock
 from docbox.backend.core.paths import get_data_dir
 from docbox.backend.schemas import OutputFormat, ReadDetail, ReadPage, ReadSummary
 
@@ -17,7 +18,29 @@ from docbox.backend.schemas import OutputFormat, ReadDetail, ReadPage, ReadSumma
 _MAX_ENTRIES = 200
 _UNFINISHED = ("queued", "reading")
 
-_lock = threading.Lock()
+_thread_lock = threading.Lock()
+
+
+class _Lock:
+    """This process's threads, then other DocBox processes (the CLI, the MCP server)."""
+
+    def __enter__(self) -> None:
+        _thread_lock.acquire()
+        try:
+            self._file = data_lock("history")
+            self._file.acquire()
+        except BaseException:
+            _thread_lock.release()
+            raise
+
+    def __exit__(self, *exc) -> None:
+        try:
+            self._file.release()
+        finally:
+            _thread_lock.release()
+
+
+_lock = _Lock()
 
 
 def _dir() -> Path:
