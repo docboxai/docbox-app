@@ -207,6 +207,10 @@ install fails. External web pages go through `lib/external.ts` (`openExternal`,
 `openInBrowser`): `target="_blank"` alone doesn't open the browser on macOS or Linux, and the
 opener capability lists every URL allowed.
 
+Child processes (the bootstrap `uv`, the backend) go through `outside_appimage` in
+`main.rs`: the AppImage launcher's PYTHONHOME/PYTHONPATH/LD_LIBRARY_PATH point into its
+mount and would break the managed Python.
+
 ### The "never silently install untrusted binaries" rule
 
 System-level programs (Tesseract, Ollama) are never installed without the user's
