@@ -332,6 +332,15 @@ engine (LRU), serializes runs on it with a per-engine lock and drops it after
 `engine_cache.evict()` first (it waits for a read in progress). The benchmark worker never
 uses it: a fresh process per model keeps its load and memory numbers honest.
 
+Reads take a PDF page's own text instead of OCRing it (`pages.iter_read_pages`,
+`ReadPage.source = "pdf_text"`) when it has at least `_MIN_TEXT_CHARS` of text, isn't
+rotated, and images cover at most `_MAX_IMAGE_COVER` of it (scans are OCRed again, even
+with an older OCR layer). Its lines come from pdfium's text rectangles, boxed in the
+rendered page's pixels so a searchable PDF lines up. The model is loaded only at the first
+page that needs OCR. `use_pdf_text=False` (reads API form field, the Read a file switch,
+`docbox read --ocr-all`) OCRs every page; benchmarks always do
+(`iter_pages`).
+
 `core/config_store.py` also holds the default model, the output folder and the cloud
 switch (`/api/settings`). With the switch off, NVIDIA NIM models are hidden and refused
 (`platforms.cloud_blocked`); an unset switch follows whether a key was saved.

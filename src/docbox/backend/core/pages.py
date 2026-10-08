@@ -1,5 +1,7 @@
 """Turning an uploaded file into page images: every page of a PDF or multi-page TIFF,
-or the single image otherwise."""
+or the single image otherwise. For reads, a PDF page that already carries its text (an
+exported invoice, a report saved from a word processor) can give that text instead of an
+image to OCR."""
 
 from __future__ import annotations
 
@@ -9,7 +11,15 @@ from dataclasses import dataclass
 
 from PIL import Image, ImageSequence
 
+from docbox.backend.schemas import OcrLine
+
 _PDF_RENDER_DPI = 200
+# A page's own text replaces OCR only when there's clearly some: a lone page number or a
+# stamp on a scanned page shouldn't stop the page from being read.
+_MIN_TEXT_CHARS = 20
+# ...and only when images cover at most half of the page. A scan is an image, often with
+# an older OCR layer of unknown quality on top; those pages are read again.
+_MAX_IMAGE_COVER = 0.5
 
 
 class PageError(ValueError):
@@ -81,6 +91,102 @@ def iter_pages(
     image = _open_image(data)
     for frame in ImageSequence.Iterator(image):
         yield Page(frame.convert("RGB"), _image_dpi(image))
+
+
+@dataclass
+class ReadablePage:
+    """A page as a read takes it: an image to OCR, or (`lines` set) the PDF's own text,
+    with `image` then only when the output still needs it (a searchable PDF)."""
+
+    image: Image.Image | None
+    dpi: float
+    # The page's own text lines, boxed in the rendered image's pixels like an engine's.
+    lines: list[OcrLine] | None = None
+    text: str = ""
+
+
+def iter_read_pages(
+    data: bytes, content_type: str | None, file_name: str | None = None, *,
+    use_pdf_text: bool = True, keep_images: bool = False,
+) -> Iterator[ReadablePage]:
+    """Every page in order, for a read. With `use_pdf_text`, a PDF page with usable text of
+    its own comes with that text, and is only rendered when `keep_images` asks for it.
+    Benchmarks don't use this: they measure models, so every page goes through OCR."""
+    if not (use_pdf_text and is_pdf(content_type, file_name)):
+        for page in iter_pages(data, content_type, file_name):
+            yield ReadablePage(page.image, page.dpi)
+        return
+
+    import pypdfium2 as pdfium
+
+    try:
+        pdf = pdfium.PdfDocument(data)
+    except pdfium.PdfiumError as exc:
+        raise PageError(f"Could not read PDF: {exc}") from None
+    try:
+        for index in range(len(pdf)):
+            page = pdf[index]
+            own = _own_text(page)
+            image = None
+            if own is None or keep_images:
+                image = page.render(scale=_PDF_RENDER_DPI / 72).to_pil().convert("RGB")
+            if own is None:
+                yield ReadablePage(image, _PDF_RENDER_DPI)
+            else:
+                text, lines = own
+                yield ReadablePage(image, _PDF_RENDER_DPI, lines=lines, text=text)
+    finally:
+        pdf.close()
+
+
+def _own_text(page) -> tuple[str, list[OcrLine]] | None:
+    """The page's text and its lines, when the page has usable text and isn't a scan;
+    None when it should be OCRed."""
+    import pypdfium2.raw as pdfium_c
+
+    # Rotated pages are left to OCR rather than turning the text boxes with the page.
+    if page.get_rotation() % 360:
+        return None
+    left, bottom, right, top = page.get_cropbox()
+    if right <= left or top <= bottom:
+        return None
+
+    covered = 0.0
+    for obj in page.get_objects(max_depth=1):
+        is_image = obj.type == pdfium_c.FPDF_PAGEOBJ_IMAGE
+        # An image inside a form XObject reports its bounds in the form's own space, so
+        # the form's page-space bounds stand in for it (a conservative overestimate).
+        if not is_image and obj.type == pdfium_c.FPDF_PAGEOBJ_FORM:
+            is_image = next(
+                page.get_objects(filter=[pdfium_c.FPDF_PAGEOBJ_IMAGE], form=obj, level=1),
+                None,
+            ) is not None
+        if is_image:
+            ol, ob, orr, ot = obj.get_bounds()
+            covered += max(0.0, min(orr, right) - max(ol, left)) * max(
+                0.0, min(ot, top) - max(ob, bottom))
+    if covered > _MAX_IMAGE_COVER * (right - left) * (top - bottom):
+        return None
+
+    textpage = page.get_textpage()
+    try:
+        text = textpage.get_text_range().replace("\r\n", "\n").replace("\r", "\n").strip()
+        if sum(not c.isspace() for c in text) < _MIN_TEXT_CHARS:
+            return None
+        # pdfium groups the characters into one rectangle per run of a line; each becomes
+        # a line, placed where the rendered page shows it.
+        scale = _PDF_RENDER_DPI / 72
+        lines = []
+        for i in range(textpage.count_rects()):
+            rl, rb, rr, rt = textpage.get_rect(i)
+            line = textpage.get_text_bounded(rl, rb, rr, rt).strip()
+            if line:
+                lines.append(OcrLine(text=line, box=[
+                    (rl - left) * scale, (top - rt) * scale, (rr - left) * scale, (top - rb) * scale,
+                ]))
+    finally:
+        textpage.close()
+    return text, lines
 
 
 def load_page(data: bytes, content_type: str | None, page: int) -> Image.Image:

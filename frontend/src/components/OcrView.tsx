@@ -34,6 +34,7 @@ import {
   SectionLabel,
   Spinner,
   StatCard,
+  Switch,
   Tabs,
   cx,
   type CardTone,
@@ -170,9 +171,12 @@ function ResultPanel({
       flash("copied");
     });
 
+  // Pages whose text came from the PDF itself rather than the model.
+  const ownText = read.pages.filter((page) => page.source === "pdf_text").length;
   const meta = [
-    read.model_name,
+    ownText === read.pages.length && ownText > 0 ? "the PDF's own text" : read.model_name,
     read.pages_total != null ? plural(read.pages_total, "page") : null,
+    ownText > 0 && ownText < read.pages.length ? `${ownText} of ${read.pages.length} used the PDF's own text` : null,
     read.seconds != null ? formatSeconds(read.seconds) : null,
     read.output_path ? `saved as ${shortPath(read.output_path)}` : null,
   ].filter(Boolean);
@@ -264,7 +268,10 @@ function ResultPanel({
           read.pages.map((page, p) => (
             <div key={p} className="py-1">
               {read.pages.length > 1 && (
-                <h4 className="pt-3 pb-1 text-xs font-medium tracking-[0.3px] text-fg-muted uppercase">Page {p + 1}</h4>
+                <h4 className="pt-3 pb-1 text-xs font-medium tracking-[0.3px] text-fg-muted uppercase">
+                  Page {p + 1}
+                  {page.source === "pdf_text" && <span className="font-normal normal-case"> · the PDF's own text</span>}
+                </h4>
               )}
               <ol>
                 {page.lines.map((line, i) => (
@@ -303,6 +310,7 @@ export function OcrView() {
   const [modelId, setModelId] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [format, setFormat] = useState<OutputFormat>("txt");
+  const [usePdfText, setUsePdfText] = useState(true);
   const [reads, setReads] = useState<ReadSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ReadDetail | null>(null);
@@ -418,7 +426,7 @@ export function OcrView() {
     setStarting(true);
     setError(null);
     try {
-      const { reads: started } = await api.startReads(modelId, files, format);
+      const { reads: started } = await api.startReads(modelId, files, format, usePdfText);
       setFiles([]);
       setSelectedId(started[0]?.id ?? null);
       await loadReads();
@@ -551,6 +559,15 @@ export function OcrView() {
                   </div>
                 </div>
                 <Tabs label="Save the text as" value={format} options={FORMATS} onChange={setFormat} />
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-col">
+                    <span className="text-[13px] font-medium text-on-light">Use text already in PDFs</span>
+                    <span className="text-xs text-on-light-muted">
+                      {usePdfText ? "Pages that carry their own text skip OCR" : "Every page is read by the model"}
+                    </span>
+                  </div>
+                  <Switch label="Use text already in PDFs" checked={usePdfText} onChange={setUsePdfText} />
+                </div>
                 <div className="flex items-center justify-between gap-3">
                   <span className="min-w-0 truncate text-[13px] text-on-light-muted" title={settings?.output_dir}>
                     {runHint}

@@ -20,6 +20,8 @@ def start_reads(
     files: list[UploadFile] = File(...),
     model_id: str = Form(...),
     output_format: OutputFormat = Form("txt"),
+    # False reads every PDF page with the model, even pages that carry their own text.
+    use_pdf_text: bool = Form(True),
 ) -> ReadStartResponse:
     try:
         spec = reader.check_runnable(model_id)
@@ -32,6 +34,7 @@ def start_reads(
             content_type=f.content_type,
             spec=spec,
             output_format=output_format,
+            use_pdf_text=use_pdf_text,
         )
         for f in files
     ]

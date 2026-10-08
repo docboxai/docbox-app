@@ -80,8 +80,8 @@ def png() -> bytes:
 
 
 def read(spec: ModelSpec, data: bytes, name: str = "scan.png", ctype: str = "image/png",
-         fmt: str = "txt"):
+         fmt: str = "txt", use_pdf_text: bool = True):
     """Read one file now, as the CLI does, and return its history detail."""
     read_id = reader.read_now(file_name=name, data=data, content_type=ctype, spec=spec,
-                              output_format=fmt)
+                              output_format=fmt, use_pdf_text=use_pdf_text)
     return history.get_detail(read_id)
