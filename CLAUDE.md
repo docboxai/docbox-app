@@ -195,9 +195,17 @@ commit that isn't on `main` or a version that doesn't match `tauri.conf.json`, `
 and `pyproject.toml`. Each platform's `build` job uploads its installers; the `release` job
 names them `DocBox-<version>-<os>-<arch>.<ext>` and creates a draft release, failing if an
 installer is missing or unexpected. Its third-party actions are pinned to commits and the
-Tauri CLI to an exact version. There is no auto-updater (no signing key, `.sig` files or
-`latest.json`): the frontend's `UpdateBanner` compares the app version with GitHub's latest
-release and opens the releases page, the only URL the opener capability allows.
+Tauri CLI to an exact version. Builds are signed for the in-app updater
+(`TAURI_SIGNING_PRIVATE_KEY*` secrets; `bundle.createUpdaterArtifacts`), and the release job
+writes `latest.json` with an entry per `<os>-<arch>[-<installer>]` (nsis, msi, app, appimage,
+deb, rpm) pointing at the renamed files. Installed copies back to 0.1.0 read
+`releases/latest/download/latest.json` and only accept that key (`plugins.updater.pubkey`).
+`UpdateBanner` installs a signed update in-app (`prepare_restart` stops the backend first;
+`.deb`/`.rpm` go through pkexec), and falls back to comparing the version with GitHub's
+latest release and opening the releases page when there's no usable `latest.json` or the
+install fails. External web pages go through `lib/external.ts` (`openExternal`,
+`openInBrowser`): `target="_blank"` alone doesn't open the browser on macOS or Linux, and the
+opener capability lists every URL allowed.
 
 ### The "never silently install untrusted binaries" rule
 

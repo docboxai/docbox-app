@@ -1,13 +1,30 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core APIs, plus opening the releases page when a new version is out.",
-  "windows": ["main"],
+  "description": "Main window: core APIs, installing app updates, and opening a few web pages (releases, where to get an NVIDIA key or Ollama or Tesseract) in the browser.",
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
+    "updater:default",
+    "process:allow-restart",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://github.com/docboxai/docbox-app/releases/latest" }]
+      "allow": [
+        {
+          "url": "https://github.com/docboxai/docbox-app/releases/latest"
+        },
+        {
+          "url": "https://build.nvidia.com"
+        },
+        {
+          "url": "https://ollama.com/download"
+        },
+        {
+          "url": "https://github.com/UB-Mannheim/tesseract/wiki"
+        }
+      ]
     }
   ]
 }

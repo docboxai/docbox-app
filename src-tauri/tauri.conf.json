@@ -27,8 +27,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "copyright": "Copyright 2026 DocBox AI team (Pranav and Pawan)",
-    "externalBin": ["binaries/uv"],
+    "externalBin": [
+      "binaries/uv"
+    ],
     "resources": {
       "../pyproject.toml": "backend/pyproject.toml",
       "../uv.lock": "backend/uv.lock",
@@ -57,6 +60,14 @@
         "bannerPath": "icons/installer/wix-banner.bmp",
         "dialogImagePath": "icons/installer/wix-dialog.bmp"
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIyNjk3MEMzNjQwMUQ5NTAKUldSUTJRRmt3M0JwSXQvRmFpbEtXdEpXRU50SmlIdEpsZWVLMjR4MWxkZm9jMkVYd2d0LzZUME4K",
+      "endpoints": [
+        "https://github.com/docboxai/docbox-app/releases/latest/download/latest.json"
+      ]
     }
   }
 }

@@ -161,8 +161,11 @@ decide which models will run comfortably.
 ### 7. Updates
 
 DocBox checks for a new version each time it starts. When there is one, a bar at the top
-offers **Download**, which opens the Releases page. Install the new version over the old
-one: your engines, models and settings are kept.
+offers **Install & restart**: DocBox downloads the update, checks its signature, installs it
+and reopens. On Linux, a `.deb` or `.rpm` install asks for your password first, like any
+system package. Your engines, models and settings are kept. If the update can't be
+installed from inside the app, the bar offers **Download** instead, which opens the
+Releases page: install the new version over the old one.
 
 ## Which engine should I use?
 
@@ -259,11 +262,19 @@ names them `DocBox-<version>-<os>-<arch>` and creates a **draft** GitHub Release
 GitHub's list of changes. Releases come only from `main`: the workflow refuses a tag on any
 commit that isn't on `main`.
 
+Each installer is signed for the in-app updater with the `TAURI_SIGNING_PRIVATE_KEY` and
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets, and the release carries a
+`latest.json` naming the file and signature for each kind of install (plus the macOS
+`.app.tar.gz` the updater installs). Every installed copy, back to 0.1.0, checks
+`releases/latest/download/latest.json` and accepts only updates signed with that key
+(`plugins.updater.pubkey` in `tauri.conf.json`), so keep both secrets: losing the key means
+existing installs can't update in-app any more.
+
 To release: bump the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and
 `pyproject.toml` on `main` (the workflow refuses a mismatch), then tag that commit and push
 the tag: `git tag -a v0.2.0 -m "DocBox 0.2.0" && git push origin v0.2.0`. Edit the list of
-changes in the draft release, then publish it; installed copies show the update notice from
-then on.
+changes in the draft release, then publish it; installed copies offer the update from then
+on.
 
 ## Running the backend in Docker
 
