@@ -325,6 +325,13 @@ at startup. `/api/ocr/run` (one page, answered directly) stays as the contract
 never a path. `OcrLine.box` carries line positions from engines that report them
 (PaddleOCR, Tesseract, EasyOCR) so the PDF text lines up with the scan.
 
+Engines are kept loaded between reads (`core/engine_cache.py`): reads and `/api/ocr/run` take
+the model's engine through `engine_cache.loaded(spec)`, which loads it once, keeps one
+engine (LRU), serializes runs on it with a per-engine lock and drops it after
+`DOCBOX_ENGINE_IDLE_S` (default 300 s, 0 = never). Anything that deletes model files calls
+`engine_cache.evict()` first (it waits for a read in progress). The benchmark worker never
+uses it: a fresh process per model keeps its load and memory numbers honest.
+
 `core/config_store.py` also holds the default model, the output folder and the cloud
 switch (`/api/settings`). With the switch off, NVIDIA NIM models are hidden and refused
 (`platforms.cloud_blocked`); an unset switch follows whether a key was saved.
