@@ -4,6 +4,7 @@ import { api, type PlatformStatus } from "../lib/api";
 import { useApp } from "../lib/app";
 import { PrerequisiteCard } from "./PrerequisiteCard";
 import { Button, Card, Chip, SectionLabel, Switch } from "./ui";
+import { openInBrowser } from "../lib/external";
 
 function StatusChip({ status }: { status: PlatformStatus | undefined }) {
   if (!status) return null;
@@ -159,6 +160,7 @@ export function PlatformsView() {
                 <a
                   href="https://build.nvidia.com"
                   target="_blank"
+                  onClick={openInBrowser}
                   rel="noreferrer"
                   className="flex items-center gap-1 text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
                 >

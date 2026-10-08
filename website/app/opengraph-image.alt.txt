@@ -1,0 +1,1 @@
+DocBox: read text from images and PDFs, on your own computer.

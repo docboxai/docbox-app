@@ -45,15 +45,15 @@ Run the Tauri CLI from the repository root. With no `package.json` there, it sea
 below for one and takes `frontend/` as the frontend directory, which is where
 `beforeDevCommand`/`beforeBuildCommand` in `src-tauri/tauri.conf.json` run (so they're
 plain `npm run dev`/`npm run build`). Run from `src-tauri/`, it finds no `package.json` and
-falls back to the repository root, where those hooks fail. tauri-action in the release
-workflow runs from the root too. Dev builds run the repo's `.venv/…/python`, so `uv sync`
+falls back to the repository root, where those hooks fail. The release workflow runs
+`cargo tauri build` from the root too. Dev builds run the repo's `.venv/…/python`, so `uv sync`
 must have been run first. A plain `uv sync` is exact: it uninstalls extras you didn't
 pass, so always pass the extras you need.
 
 ### Build an installer locally
 
 ```sh
-cargo tauri build   # from the root; needs TAURI_SIGNING_PRIVATE_KEY (updater artifacts)
+cargo tauri build   # from the root
 ```
 
 `build.rs` copies `uv` from PATH into `src-tauri/binaries/uv-<target-triple>` when the
@@ -191,13 +191,25 @@ packages lazily (inside methods): `models_catalog.py` imports every engine modul
 when its extra isn't installed.
 
 Releases: `.github/workflows/release.yml` on `v*` tags. Its `check` job refuses a tag on a
-commit that isn't on `main`, a version that doesn't match `tauri.conf.json`, `Cargo.toml`
-and `pyproject.toml`, or a missing `TAURI_SIGNING_PRIVATE_KEY` secret; then the builds sign
-the updater artifacts with it and substitute `OWNER/REPO` in the updater endpoint. Its
-third-party actions are pinned to commits and the Tauri CLI to an exact version.
-The frontend's `UpdateBanner` calls the `prepare_restart` command (stop the backend)
-before `update.install()`, because the Windows updater exits the app without the normal
-close handling.
+commit that isn't on `main` or a version that doesn't match `tauri.conf.json`, `Cargo.toml`
+and `pyproject.toml`. Each platform's `build` job uploads its installers; the `release` job
+names them `DocBox-<version>-<os>-<arch>.<ext>` and creates a draft release, failing if an
+installer is missing or unexpected. Its third-party actions are pinned to commits and the
+Tauri CLI to an exact version. Builds are signed for the in-app updater
+(`TAURI_SIGNING_PRIVATE_KEY*` secrets; `bundle.createUpdaterArtifacts`), and the release job
+writes `latest.json` with an entry per `<os>-<arch>[-<installer>]` (nsis, msi, app, appimage,
+deb, rpm) pointing at the renamed files. Installed copies back to 0.1.0 read
+`releases/latest/download/latest.json` and only accept that key (`plugins.updater.pubkey`).
+`UpdateBanner` installs a signed update in-app (`prepare_restart` stops the backend first;
+`.deb`/`.rpm` go through pkexec), and falls back to comparing the version with GitHub's
+latest release and opening the releases page when there's no usable `latest.json` or the
+install fails. External web pages go through `lib/external.ts` (`openExternal`,
+`openInBrowser`): `target="_blank"` alone doesn't open the browser on macOS or Linux, and the
+opener capability lists every URL allowed.
+
+Child processes (the bootstrap `uv`, the backend) go through `outside_appimage` in
+`main.rs`: the AppImage launcher's PYTHONHOME/PYTHONPATH/LD_LIBRARY_PATH point into its
+mount and would break the managed Python.
 
 ### The "never silently install untrusted binaries" rule
 
@@ -281,6 +293,16 @@ new engine, add its icon/label/capabilities/guidance to the maps in
 
 Every engine implements `delete()`; PaddleOCR's keeps model dirs another *downloaded*
 catalog entry still uses (all PP-OCRv5 language families share `PP-OCRv5_server_det`).
+
+### Website
+
+`website/` is the landing page, separate from the app: Next.js (App Router), Tailwind 4,
+Lenis smooth scrolling, bun, deployed on Vercel with `website/` as the project root. CI
+lints and builds it. Its shader effects run the design's pen.dev GLSL unchanged
+(`components/shader/glsl/`); `ShaderCanvas` fills the annotated uniforms and divides
+gl_FragCoord by the pixel ratio so effects keep the design's pixel scale. Scroll reveals
+use `data-reveal` (from `lib/reveal.ts`): put it on a wrapper, never on an element with
+its own transitions, since it sets `translate` and `transition`. See `website/README.md`.
 
 ### PaddleOCR internals worth knowing before touching `engines/paddleocr_engine.py` or `paddleocr_vl_engine.py`
 

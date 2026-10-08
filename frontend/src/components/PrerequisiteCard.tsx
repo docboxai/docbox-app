@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Check, Copy, Download, ExternalLink, Play, RefreshCw, Wrench } from "lucide-react";
 import { api, type PrerequisiteInfo } from "../lib/api";
 import { Button, Card, ProgressBar, Spinner } from "./ui";
+import { openInBrowser } from "../lib/external";
 
 // Guided setup for an external program an engine needs (Ollama, Tesseract): one-click
 // install on Windows (winget, with its own UAC prompt), copyable commands elsewhere,
@@ -170,6 +171,7 @@ export function PrerequisiteCard({ id, onReady }: { id: string; onReady?: () => 
               <a
                 href={info.download_url}
                 target="_blank"
+                onClick={openInBrowser}
                 rel="noreferrer"
                 className="flex w-fit items-center gap-1 text-xs text-fg-muted underline-offset-2 hover:text-fg hover:underline"
               >
