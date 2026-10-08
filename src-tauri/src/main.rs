@@ -5,7 +5,7 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -14,6 +14,9 @@ use tauri::{AppHandle, Manager, State};
 
 const PREFERRED_PORT: u16 = 8756;
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(60);
+// How long a process group gets to exit on SIGTERM before it's SIGKILLed.
+#[cfg(not(windows))]
+const STOP_GRACE: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Default, Serialize)]
 struct BootStatus {
@@ -29,6 +32,10 @@ struct BootStatus {
 struct Backend {
     status: Mutex<BootStatus>,
     child: Mutex<Option<Child>>,
+    // The backend's stdin, never written to. The backend shuts down when it closes, which
+    // happens when this is dropped and also when the shell dies without cleaning up
+    // (crash, force-quit): the OS closes the pipe either way. Drop it only to stop it.
+    lifeline: Mutex<Option<ChildStdin>>,
     // The bootstrap `uv sync`, so closing the window mid-setup doesn't orphan it.
     setup_pid: Mutex<Option<u32>>,
 }
@@ -120,6 +127,17 @@ fn no_window(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
+/// On Unix, start the child as the leader of a new process group, so `stop_child` and
+/// `kill_tree` reach everything it starts in turn (engine installs, benchmark workers).
+fn own_process_group(cmd: &mut Command) -> &mut Command {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.process_group(0);
+    }
+    cmd
+}
+
 /// The AppImage's launcher points PYTHONHOME, PYTHONPATH and LD_LIBRARY_PATH into its own
 /// mounted image. Inherited, they send uv's Python looking for its standard library in
 /// there ("No module named 'encodings'"), so child processes get them back without the
@@ -199,10 +217,12 @@ fn ensure_runtime(app: &AppHandle, l: &Layout) -> Result<(), String> {
     let uv = l.uv.as_ref().ok_or("no uv sidecar")?;
     let mut cmd = Command::new(uv);
     outside_appimage(&mut cmd);
+    own_process_group(&mut cmd);
     cmd.args(["sync", "--frozen", "--no-dev", "--no-install-project", "--project"])
         .arg(&l.project_dir)
         .env("UV_PYTHON_PREFERENCE", "only-managed")
         .envs(uv_env(l))
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let extras: Vec<String> = state["extras"]
@@ -268,11 +288,15 @@ fn spawn_backend(l: &Layout, port: u16) -> Result<Child, String> {
     let log_err = log.try_clone().map_err(|e| e.to_string())?;
     let mut cmd = Command::new(&l.python);
     outside_appimage(&mut cmd);
+    own_process_group(&mut cmd);
     cmd.args(["-m", "docbox.backend.main", "--host", "127.0.0.1", "--port", &port.to_string()])
+        // The backend exits when its stdin closes: see `Backend::lifeline`.
+        .arg("--exit-on-stdin-close")
         .current_dir(&l.project_dir)
         .env("DOCBOX_DATA_DIR", &l.data_dir)
         .env("DOCBOX_PROJECT_DIR", &l.project_dir)
         .envs(uv_env(l))
+        .stdin(Stdio::piped())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(log_err));
     if l.managed {
@@ -290,12 +314,47 @@ fn spawn_backend(l: &Layout, port: u16) -> Result<Child, String> {
         .map_err(|e| format!("failed to start the backend ({:?}): {e}", l.python))
 }
 
+/// Send `signal` to the process group `pgid` leads (see `own_process_group`).
+#[cfg(not(windows))]
+fn signal_group(pgid: u32, signal: libc::c_int) -> bool {
+    // kill(-1) would signal every process we may signal, and kill(-0) our own group.
+    if pgid <= 1 {
+        return false;
+    }
+    // SAFETY: kill(2) only reads its arguments.
+    unsafe { libc::kill(-(pgid as libc::pid_t), signal) == 0 }
+}
+
 // A plain `child.kill()` only terminates that one process. That's not enough on
 // Windows: a uv-managed venv's `python.exe` is itself a trampoline stub that spawns the
 // real CPython interpreter as a *further* child, so the process we hold a `Child` for
 // isn't the one actually doing OCR/model-download work. `taskkill /T` kills the whole
 // process tree rooted at that PID, which reaches the real interpreter regardless of how
-// many stub layers are in between.
+// many stub layers are in between. On Unix the children run in their own process group,
+// which covers everything they start (unless something leaves the group on purpose).
+
+/// Stop a child we spawned and everything it started, and reap it.
+fn stop_child(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        kill_tree(child.id());
+    }
+    #[cfg(not(windows))]
+    {
+        let pgid = child.id();
+        signal_group(pgid, libc::SIGTERM);
+        let deadline = std::time::Instant::now() + STOP_GRACE;
+        while std::time::Instant::now() < deadline && matches!(child.try_wait(), Ok(None)) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        // The child if it ignored SIGTERM, and anything it started that's still running.
+        signal_group(pgid, libc::SIGKILL);
+    }
+    let _ = child.wait();
+}
+
+/// Stop a process tree we only know the PID of (the bootstrap `uv`, whose `Child` its
+/// own thread holds and reaps).
 fn kill_tree(pid: u32) {
     #[cfg(windows)]
     {
@@ -305,7 +364,13 @@ fn kill_tree(pid: u32) {
     }
     #[cfg(not(windows))]
     {
-        let _ = Command::new("kill").args(["-TERM", &pid.to_string()]).status();
+        signal_group(pid, libc::SIGTERM);
+        let deadline = std::time::Instant::now() + STOP_GRACE;
+        // Signal 0 only checks that the group still has a member.
+        while std::time::Instant::now() < deadline && signal_group(pid, 0) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        signal_group(pid, libc::SIGKILL);
     }
 }
 
@@ -335,7 +400,8 @@ fn boot(app: &AppHandle) -> Result<(), String> {
     set_status(app, "starting", "Starting the OCR backend", 97.0);
     let port = pick_port();
     let base_url = format!("http://127.0.0.1:{port}");
-    let child = spawn_backend(&l, port)?;
+    let mut child = spawn_backend(&l, port)?;
+    *app.state::<Backend>().lifeline.lock().unwrap() = child.stdin.take();
     *app.state::<Backend>().child.lock().unwrap() = Some(child);
 
     tauri::async_runtime::block_on(wait_until_ready(&base_url))?;
@@ -374,20 +440,27 @@ fn backend_base_url(state: State<Backend>) -> Result<String, String> {
         .ok_or_else(|| "backend not ready yet".to_string())
 }
 
+/// Stop the backend and everything it started: close its lifeline (it starts shutting
+/// down by itself), then stop the process tree.
+fn stop_backend(state: &Backend) {
+    drop(state.lifeline.lock().unwrap().take());
+    let child = state.child.lock().unwrap().take();
+    if let Some(mut child) = child {
+        stop_child(&mut child);
+    }
+}
+
 /// Stop the bootstrap `uv` and the backend (whole process trees). Every way the app can
 /// end goes through here: window close, the updater handing off to the installer on
-/// Windows, an in-app restart after an update, and normal exit.
+/// Windows, an in-app restart after an update, and normal exit. If the shell dies
+/// without getting here, the backend still exits: its lifeline closes with the shell.
 fn shutdown_backend(app: &AppHandle) {
     let state = app.state::<Backend>();
     let setup_pid = state.setup_pid.lock().unwrap().take();
     if let Some(pid) = setup_pid {
         kill_tree(pid);
     }
-    let child = state.child.lock().unwrap().take();
-    if let Some(mut child) = child {
-        kill_tree(child.id());
-        let _ = child.wait();
-    }
+    stop_backend(&state);
 }
 
 #[tauri::command]
@@ -400,10 +473,7 @@ fn retry_backend(app: AppHandle, state: State<Backend>) {
     if state.status.lock().unwrap().state != "failed" {
         return;
     }
-    if let Some(mut child) = state.child.lock().unwrap().take() {
-        kill_tree(child.id());
-        let _ = child.wait();
-    }
+    stop_backend(&state);
     start_boot(app);
 }
 
