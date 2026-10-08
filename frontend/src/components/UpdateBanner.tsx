@@ -4,12 +4,10 @@ import { invoke } from "@tauri-apps/api/core";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { Download, X } from "lucide-react";
-import { openExternal } from "../lib/external";
+import { RELEASES_PAGE, openExternal } from "../lib/external";
 import { Button, Spinner } from "./ui";
 
 const LATEST_RELEASE_API = "https://api.github.com/repos/docboxai/docbox-app/releases/latest";
-// Allowed by the opener capability (src-tauri/capabilities/default.json).
-const RELEASES_PAGE = "https://github.com/docboxai/docbox-app/releases/latest";
 
 /** "1.2.3" or "v1.2.3" as numbers; null for anything else. */
 function parseVersion(version: string) {

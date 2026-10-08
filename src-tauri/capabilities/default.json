@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Main window: core APIs, installing app updates, and opening a few web pages (releases, where to get an NVIDIA key or Ollama or Tesseract) in the browser.",
+  "description": "Main window: core APIs, installing app updates, and opening a few web pages in the browser: releases, where to get an NVIDIA key, Ollama or Tesseract, and the sources of the published benchmark scores. URLs are written the way a browser normalises them (a bare domain ends in \"/\"); tests/backend/test_external_links.py checks them.",
   "windows": [
     "main"
   ],
@@ -16,13 +16,28 @@
           "url": "https://github.com/docboxai/docbox-app/releases/latest"
         },
         {
-          "url": "https://build.nvidia.com"
+          "url": "https://build.nvidia.com/"
         },
         {
           "url": "https://ollama.com/download"
         },
         {
           "url": "https://github.com/UB-Mannheim/tesseract/wiki"
+        },
+        {
+          "url": "https://github.com/Yuliang-Liu/MultimodalOCR"
+        },
+        {
+          "url": "https://99franklin.github.io/ocrbench_v2/"
+        },
+        {
+          "url": "https://huggingface.co/ibm-granite/granite-vision-3.2-2b"
+        },
+        {
+          "url": "https://arxiv.org/abs/2502.13923"
+        },
+        {
+          "url": "https://github.com/OpenBMB/MiniCPM-o/blob/main/docs/minicpm_v2dot6_en.md"
         }
       ]
     }

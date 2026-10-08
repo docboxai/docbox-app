@@ -4,7 +4,7 @@ import { api, type PlatformStatus } from "../lib/api";
 import { useApp } from "../lib/app";
 import { PrerequisiteCard } from "./PrerequisiteCard";
 import { Button, Card, Chip, SectionLabel, Switch } from "./ui";
-import { openInBrowser } from "../lib/external";
+import { NVIDIA_KEYS_PAGE, openInBrowser } from "../lib/external";
 
 function StatusChip({ status }: { status: PlatformStatus | undefined }) {
   if (!status) return null;
@@ -158,7 +158,7 @@ export function PlatformsView() {
               </label>
               <div className="flex items-center justify-between gap-3">
                 <a
-                  href="https://build.nvidia.com"
+                  href={NVIDIA_KEYS_PAGE}
                   target="_blank"
                   onClick={openInBrowser}
                   rel="noreferrer"
