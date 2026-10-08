@@ -187,6 +187,12 @@ installed: its dir is read-only under Program Files), `DOCBOX_RUNTIME_MODE=manag
 `DOCBOX_UV`, `DOCBOX_DATA_DIR`, and the same `UV_*` env vars. Logs go to
 `<data>/logs/{setup,backend}.log`.
 
+HTTPS trusts the operating system's certificates, so downloads work behind company proxies
+that inspect HTTPS with their own CA: every uv the app runs gets `UV_SYSTEM_CERTS=1`
+(`main.rs::uv_env`), and each Python entry point (`create_app()`, the CLI's `main()`, the
+benchmark worker) calls `core/tls.py::use_system_certificates()`, which injects
+`truststore` into `ssl`, urllib3 and requests.
+
 Heavy engine packages are pyproject **extras** (`paddle`, `easyocr`; torch pinned to the
 CPU index via `[tool.uv.sources]`, which only applies to *direct* deps, hence torch and
 torchvision listed explicitly). `core/runtime.py` installs one on demand with
