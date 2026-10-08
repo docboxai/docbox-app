@@ -427,3 +427,22 @@ def test_download_serves_only_the_recorded_output(client: TestClient, data_dir, 
     Path(body["output_path"]).unlink()
     assert client.get(f"/api/reads/{read_id}/file").status_code == 410
     assert client.get("/api/reads/0123/file").status_code == 404
+
+
+def test_a_finished_read_has_its_pages_saved_before_it_shows_done(data_dir, monkeypatch) -> None:
+    from docbox.backend.core import history
+
+    entry = history.create("scan.png", "m", "M", "txt")
+    seen = []
+    real_save = history._save_index
+
+    def save(entries):
+        for e in entries:
+            if e.state == "done":
+                seen.append(history._detail_path(e.id).exists())
+        real_save(entries)
+
+    monkeypatch.setattr(history, "_save_index", save)
+    history.finish(entry.id, [ReadPage(lines=[], text="hello")], state="done")
+    assert seen == [True]
+    assert history.get_detail(entry.id).text == "hello"

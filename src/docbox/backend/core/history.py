@@ -107,12 +107,20 @@ def update(read_id: str, **fields) -> ReadSummary | None:
 
 
 def finish(read_id: str, pages: list[ReadPage], **fields) -> ReadSummary | None:
+    # The text is saved before the index says "done", so whoever sees "done" also finds
+    # the pages.
+    entry = get(read_id)
+    if entry is None:
+        return None
+    detail = ReadDetail(
+        **entry.model_copy(update=fields).model_dump(),
+        pages=pages,
+        text="\n\n".join(p.text for p in pages),
+    )
+    atomic.write_text(_detail_path(read_id), detail.model_dump_json())
     entry = update(read_id, **fields)
-    if entry is not None:
-        detail = ReadDetail(
-            **entry.model_dump(), pages=pages, text="\n\n".join(p.text for p in pages)
-        )
-        _detail_path(read_id).write_text(detail.model_dump_json(), encoding="utf-8")
+    if entry is None:  # deleted meanwhile
+        _detail_path(read_id).unlink(missing_ok=True)
     return entry
 
 
@@ -130,7 +138,7 @@ def get_detail(read_id: str) -> ReadDetail | None:
     if entry is None:
         return None
     try:
-        stored = ReadDetail.model_validate_json(_detail_path(read_id).read_text("utf-8"))
+        stored = ReadDetail.model_validate_json(atomic.read_text(_detail_path(read_id)))
     except (OSError, ValueError):
         return ReadDetail(**entry.model_dump())
     # The index is the source of truth for state; the detail file holds the text.
