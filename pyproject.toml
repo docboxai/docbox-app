@@ -1,6 +1,6 @@
 [project]
 name = "docbox"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local, hassle-free OCR — set up and run open-source OCR models on your own machine"
 requires-python = ">=3.12,<3.13"
 license = "Apache-2.0"

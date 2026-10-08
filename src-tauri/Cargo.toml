@@ -1,6 +1,6 @@
 [package]
 name = "docbox"
-version = "0.1.0"
+version = "0.1.1"
 description = "Local, hassle-free OCR"
 authors = ["DocBox AI team (Pranav and Pawan)"]
 license = "Apache-2.0"

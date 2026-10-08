@@ -93,7 +93,7 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 def create_app() -> FastAPI:
     tls.use_system_certificates()
-    app = FastAPI(title="DocBox Backend", version="0.1.0", lifespan=_lifespan)
+    app = FastAPI(title="DocBox Backend", version="0.1.1", lifespan=_lifespan)
 
     # Middleware added last runs first: Host check, then CORS, then the cross-site check.
     @app.middleware("http")
