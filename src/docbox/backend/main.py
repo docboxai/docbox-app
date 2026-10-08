@@ -30,7 +30,7 @@ from docbox.backend.api import (
     routes_reads,
     routes_settings,
 )
-from docbox.backend.core import history
+from docbox.backend.core import history, tls
 from docbox.backend.core.client_header import CLIENT_HEADER
 from docbox.backend.schemas import HealthStatus
 
@@ -92,6 +92,7 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    tls.use_system_certificates()
     app = FastAPI(title="DocBox Backend", version="0.1.0", lifespan=_lifespan)
 
     # Middleware added last runs first: Host check, then CORS, then the cross-site check.

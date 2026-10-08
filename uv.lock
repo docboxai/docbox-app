@@ -345,6 +345,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "rapidfuzz" },
     { name = "requests" },
+    { name = "truststore" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -390,6 +391,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.31" },
     { name = "torch", marker = "extra == 'easyocr'", specifier = ">=2.2", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "extra == 'easyocr'", specifier = ">=0.17", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "truststore", specifier = ">=0.10" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 provides-extras = ["paddle", "easyocr"]

@@ -77,7 +77,9 @@ def main() -> int:
     if job.get("lifeline"):
         _exit_when_stdin_closes()
     from docbox import plugins
+    from docbox.backend.core import tls
 
+    tls.use_system_certificates()
     plugins.load()
 
     from docbox.backend.core.pages import iter_pages

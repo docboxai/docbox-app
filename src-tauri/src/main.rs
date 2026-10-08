@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::ffi::OsString;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -163,18 +164,23 @@ fn outside_appimage(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
-/// uv env vars that pin the managed env, interpreter and cache to the app's data dir.
-/// Passed to the backend too, so its own on-demand `uv sync` (engine installs) targets
-/// the same environment.
-fn uv_env(l: &Layout) -> Vec<(&'static str, PathBuf)> {
-    if !l.managed {
-        return vec![];
+/// uv env vars for every uv the app runs: the bootstrap sync, and the backend's own
+/// on-demand `uv sync` (engine installs), which gets them passed down.
+/// - UV_SYSTEM_CERTS: verify HTTPS against the OS trust store, so downloads work behind
+///   proxies that inspect HTTPS with a CA IT installed there (Python does the same through
+///   `core/tls.py`).
+/// - Managed builds pin the env, interpreter and cache to the app's data dir, so both
+///   syncs target the same environment.
+fn uv_env(l: &Layout) -> Vec<(&'static str, OsString)> {
+    let mut env = vec![("UV_SYSTEM_CERTS", OsString::from("1"))];
+    if l.managed {
+        env.extend([
+            ("UV_PROJECT_ENVIRONMENT", l.runtime_dir.join(".venv").into_os_string()),
+            ("UV_PYTHON_INSTALL_DIR", l.runtime_dir.join("python").into_os_string()),
+            ("UV_CACHE_DIR", l.runtime_dir.join("uv-cache").into_os_string()),
+        ]);
     }
-    vec![
-        ("UV_PROJECT_ENVIRONMENT", l.runtime_dir.join(".venv")),
-        ("UV_PYTHON_INSTALL_DIR", l.runtime_dir.join("python")),
-        ("UV_CACHE_DIR", l.runtime_dir.join("uv-cache")),
-    ]
+    env
 }
 
 fn read_state(l: &Layout) -> serde_json::Value {
