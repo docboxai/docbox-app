@@ -6,6 +6,7 @@ image to OCR."""
 from __future__ import annotations
 
 import io
+import unicodedata
 from collections.abc import Iterator
 from dataclasses import dataclass
 
@@ -20,6 +21,10 @@ _MIN_TEXT_CHARS = 20
 # ...and only when images cover at most half of the page. A scan is an image, often with
 # an older OCR layer of unknown quality on top; those pages are read again.
 _MAX_IMAGE_COVER = 0.5
+# ...and only when it reads as text. A font embedded without a proper character map
+# extracts as private-use, replacement or control characters; at most this share of
+# those, or the page is OCRed.
+_MAX_UNREADABLE_SHARE = 0.1
 
 
 class PageError(ValueError):
@@ -139,6 +144,18 @@ def iter_read_pages(
         pdf.close()
 
 
+def readable_text(text: str) -> bool:
+    """Enough characters (`_MIN_TEXT_CHARS`), nearly all of them real text rather than
+    what a font without a character map extracts as."""
+    visible = [c for c in text if not c.isspace()]
+    if len(visible) < _MIN_TEXT_CHARS:
+        return False
+    unreadable = sum(
+        1 for c in visible if c == "\ufffd" or unicodedata.category(c) in ("Co", "Cn", "Cc", "Cs")
+    )
+    return unreadable <= _MAX_UNREADABLE_SHARE * len(visible)
+
+
 def _own_text(page) -> tuple[str, list[OcrLine]] | None:
     """The page's text and its lines, when the page has usable text and isn't a scan;
     None when it should be OCRed."""
@@ -171,7 +188,7 @@ def _own_text(page) -> tuple[str, list[OcrLine]] | None:
     textpage = page.get_textpage()
     try:
         text = textpage.get_text_range().replace("\r\n", "\n").replace("\r", "\n").strip()
-        if sum(not c.isspace() for c in text) < _MIN_TEXT_CHARS:
+        if not readable_text(text):
             return None
         # pdfium groups the characters into one rectangle per run of a line; each becomes
         # a line, placed where the rendered page shows it.
