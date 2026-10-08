@@ -81,6 +81,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "real_data_dir: reads models downloaded into the developer's real DocBox data folder; runs only with DOCBOX_TEST_REAL_DATA=1 (tests/conftest.py)",
+]
 
 [tool.ruff]
 line-length = 100

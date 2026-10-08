@@ -103,11 +103,17 @@ uv run ruff check src/docbox                             # lint (line-length 100
 ```
 
 Backend routes are tested directly via `fastapi.testclient.TestClient(create_app())` —
-no subprocess needed. Tests that depend on environment state (a model already
-downloaded, `tesseract` on PATH, `easyocr` importable, Ollama running, an NVIDIA key
-set) use `pytest.skip`/fixtures rather than mocking those dependencies away — see
-`tests/backend/test_models_routes.py::test_download_already_downloaded_model_reaches_done`
-and `tests/backend/test_models_catalog.py` for the pattern.
+no subprocess needed. Tests that depend on environment state (`tesseract` on PATH,
+`easyocr` importable, Ollama running, an NVIDIA key set) use `pytest.skip`/fixtures rather
+than mocking those dependencies away — see `tests/backend/test_models_catalog.py` for the
+pattern.
+
+Every test runs with its own temp `DOCBOX_DATA_DIR` (autouse `_isolated_data_dir` in
+`tests/conftest.py`), so the suite never touches the real data folder (the installed
+app's, or platformdirs'). Tests that need a model you downloaded by hand are marked
+`@pytest.mark.real_data_dir` and use your real folder only when you ask:
+`DOCBOX_TEST_REAL_DATA=1 uv run pytest` (e.g.
+`tests/backend/test_models_routes.py::test_download_already_downloaded_model_reaches_done`).
 
 There is no frontend test suite; `npm run build` / `tsc --noEmit` is the verification
 step for frontend changes.
@@ -280,7 +286,7 @@ pip install with no project to sync): extras go in with `uv pip install` pinned 
 `core/pins/constraints.txt`, exported from `uv.lock` by `scripts/export_pins.sh`; rerun it
 whenever `uv.lock` changes (`tests/service/test_shared_state.py` fails when it's stale).
 
-Tests: `tests/conftest.py` provides `data_dir` (temp `DOCBOX_DATA_DIR`) and `fake_model` /
+Tests: `tests/conftest.py` gives every test a temp `DOCBOX_DATA_DIR` (`data_dir` returns it) and `fake_model` /
 `installed_fake` (a registered `test-fake` model that reads instantly), and the CLI is run
 in-process with `docbox.cli.main.main(argv)`.
 

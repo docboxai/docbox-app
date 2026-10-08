@@ -27,6 +27,7 @@ def test_run_ocr_unknown_model_is_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+@pytest.mark.real_data_dir
 def test_run_ocr_recognizes_text(client: TestClient) -> None:
     spec = registry.get("paddleocr-mobile-en")
     if not spec.engine_factory().is_downloaded():
