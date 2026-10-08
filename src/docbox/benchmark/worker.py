@@ -59,6 +59,8 @@ def main() -> int:
 
     try:
         spec = ocr.check_runnable(job["model_id"])
+        # A fresh engine in a fresh process, never the reader's warm one (engine_cache):
+        # that's what makes the load time and peak memory honest.
         engine = spec.engine_factory()
         started = time.perf_counter()
         engine.load()

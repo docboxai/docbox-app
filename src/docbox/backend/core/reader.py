@@ -1,6 +1,7 @@
 """Reading whole files in the background: every page, one file at a time, saving the text
 in the format the user picked. Files are read one at a time because OCR is CPU-heavy
-and two at once would only make both slower."""
+and two at once would only make both slower. The model stays loaded between files
+(`engine_cache`)."""
 
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from docbox.backend import platforms
-from docbox.backend.core import config_store, history, prerequisites, runtime
+from docbox.backend.core import config_store, engine_cache, history, prerequisites, runtime
 from docbox.backend.core.pages import PageError, count_pages, iter_pages
 from docbox.backend.core.pdf_writer import PdfPage, write_searchable_pdf
 from docbox.backend.core.registry import ModelSpec
@@ -139,22 +140,23 @@ def _read(job: _Job) -> None:
         return
     history.update(job.read_id, state="reading", pages_total=total, pages_done=0)
 
-    engine = spec.engine_factory()
     pages: list[ReadPage] = []
     pdf_pages: list[PdfPage] = []
     try:
-        if not engine.is_downloaded():
-            raise NotRunnable(409, f"{spec.name} is not downloaded yet")
-        engine.load()
-        for index, page in enumerate(iter_pages(job.data, job.content_type, job.file_name)):
-            if _is_cancelled(job.read_id):
-                history.update(job.read_id, state="cancelled")
-                return
-            result = engine.run(page.image)
-            pages.append(ReadPage(lines=result.lines, text=result.text))
-            if job.output_format == "pdf":
-                pdf_pages.append(PdfPage(page.image, page.dpi, result.lines))
-            history.update(job.read_id, pages_done=index + 1)
+        # Loaded once, or taken warm from the last read with this model.
+        with engine_cache.loaded(spec) as engine:
+            for index, page in enumerate(iter_pages(job.data, job.content_type, job.file_name)):
+                if _is_cancelled(job.read_id):
+                    history.update(job.read_id, state="cancelled")
+                    return
+                result = engine.run(page.image)
+                pages.append(ReadPage(lines=result.lines, text=result.text))
+                if job.output_format == "pdf":
+                    pdf_pages.append(PdfPage(page.image, page.dpi, result.lines))
+                history.update(job.read_id, pages_done=index + 1)
+    except engine_cache.NotDownloaded as exc:
+        history.update(job.read_id, state="error", error=str(exc))
+        return
     except (NotRunnable, EngineServiceError) as exc:
         history.update(job.read_id, state="error", error=exc.detail)
         return
