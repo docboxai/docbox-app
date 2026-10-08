@@ -176,3 +176,20 @@ def test_a_model_running_elsewhere_leaves_the_warm_one_loaded(two_models) -> Non
         assert (stats.loads, stats.runs) == (1, 1)
     finally:
         registry._models.pop(elsewhere.id, None)
+
+
+def test_a_warm_easyocr_model_is_checked_without_building_a_second_reader(
+        data_dir, monkeypatch) -> None:
+    """The cache checks the model's files on every use; for EasyOCR that used to mean
+    building a whole second Reader beside the loaded one."""
+    from docbox.backend.engines import easyocr_engine
+
+    engine = easyocr_engine.EasyOcrEngine(model_id="easyocr-test", langs=["en"])
+    engine._reader = object()  # loaded
+    monkeypatch.setattr(engine, "_try_build_reader",
+                        lambda **_: pytest.fail("built a second Reader"))
+    weights = easyocr_engine._cache_dir() / "english_g2.pth"
+    weights.write_bytes(b"")
+    assert engine.is_downloaded()
+    weights.unlink()  # another process removed the model
+    assert not engine.is_downloaded()
