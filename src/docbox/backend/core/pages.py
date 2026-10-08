@@ -6,15 +6,23 @@ image to OCR."""
 from __future__ import annotations
 
 import io
+import threading
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+from typing import Any
 
 from PIL import Image, ImageSequence
 
 from docbox.backend.schemas import OcrLine
 
 _PDF_RENDER_DPI = 200
+# PDFium isn't thread-safe, and pypdfium2 lets go of the GIL inside it: two threads in it at
+# once (a background read beside an MCP read_file, the reader beside /api/ocr/run) corrupt
+# its memory and kill the process. Every call into it holds this lock, and pages and bitmaps
+# are closed while holding it rather than left to finalizers, which run on any thread.
+# Reentrant: garbage collection can close an abandoned page iterator inside a locked section.
+_PDFIUM_LOCK = threading.RLock()
 # A page's own text replaces OCR only when there's clearly some: a lone page number or a
 # stamp on a scanned page shouldn't stop the page from being read.
 _MIN_TEXT_CHARS = 20
@@ -58,18 +66,54 @@ def _open_image(data: bytes) -> Image.Image:
         raise PageError(f"Could not read image: {exc}") from None
 
 
+def _open_pdf(data: bytes):
+    """Call with `_PDFIUM_LOCK` held."""
+    import pypdfium2 as pdfium
+
+    try:
+        return pdfium.PdfDocument(data)
+    except pdfium.PdfiumError as exc:
+        raise PageError(f"Could not read PDF: {exc}") from None
+
+
+def _render(page) -> Image.Image:
+    """Call with `_PDFIUM_LOCK` held. The image is a copy, so the bitmap can go."""
+    bitmap = page.render(scale=_PDF_RENDER_DPI / 72)
+    try:
+        return bitmap.to_pil().convert("RGB")
+    finally:
+        bitmap.close()
+
+
+def _each_pdf_page[T](data: bytes, use: Callable[[Any], T]) -> Iterator[T]:
+    """`use(page)` for every page of a PDF in order, each call holding `_PDFIUM_LOCK`; the
+    results are yielded with it released, so other threads get PDFium between pages."""
+    with _PDFIUM_LOCK:
+        pdf = _open_pdf(data)
+    try:
+        with _PDFIUM_LOCK:
+            count = len(pdf)
+        for index in range(count):
+            with _PDFIUM_LOCK:
+                page = pdf[index]
+                try:
+                    result = use(page)
+                finally:
+                    page.close()
+            yield result
+    finally:
+        with _PDFIUM_LOCK:
+            pdf.close()
+
+
 def count_pages(data: bytes, content_type: str | None, file_name: str | None = None) -> int:
     if is_pdf(content_type, file_name):
-        import pypdfium2 as pdfium
-
-        try:
-            pdf = pdfium.PdfDocument(data)
-        except pdfium.PdfiumError as exc:
-            raise PageError(f"Could not read PDF: {exc}") from None
-        try:
-            return len(pdf)
-        finally:
-            pdf.close()
+        with _PDFIUM_LOCK:
+            pdf = _open_pdf(data)
+            try:
+                return len(pdf)
+            finally:
+                pdf.close()
     return getattr(_open_image(data), "n_frames", 1)
 
 
@@ -79,18 +123,8 @@ def iter_pages(
     """Yield every page in order. Rendering is lazy, so a long PDF never sits in memory
     as a stack of full-resolution images."""
     if is_pdf(content_type, file_name):
-        import pypdfium2 as pdfium
-
-        try:
-            pdf = pdfium.PdfDocument(data)
-        except pdfium.PdfiumError as exc:
-            raise PageError(f"Could not read PDF: {exc}") from None
-        try:
-            for index in range(len(pdf)):
-                bitmap = pdf[index].render(scale=_PDF_RENDER_DPI / 72)
-                yield Page(bitmap.to_pil().convert("RGB"), _PDF_RENDER_DPI)
-        finally:
-            pdf.close()
+        for image in _each_pdf_page(data, _render):
+            yield Page(image, _PDF_RENDER_DPI)
         return
 
     image = _open_image(data)
@@ -122,26 +156,15 @@ def iter_read_pages(
             yield ReadablePage(page.image, page.dpi)
         return
 
-    import pypdfium2 as pdfium
+    def read(page) -> ReadablePage:
+        own = _own_text(page)
+        image = _render(page) if own is None or keep_images else None
+        if own is None:
+            return ReadablePage(image, _PDF_RENDER_DPI)
+        text, lines = own
+        return ReadablePage(image, _PDF_RENDER_DPI, lines=lines, text=text)
 
-    try:
-        pdf = pdfium.PdfDocument(data)
-    except pdfium.PdfiumError as exc:
-        raise PageError(f"Could not read PDF: {exc}") from None
-    try:
-        for index in range(len(pdf)):
-            page = pdf[index]
-            own = _own_text(page)
-            image = None
-            if own is None or keep_images:
-                image = page.render(scale=_PDF_RENDER_DPI / 72).to_pil().convert("RGB")
-            if own is None:
-                yield ReadablePage(image, _PDF_RENDER_DPI)
-            else:
-                text, lines = own
-                yield ReadablePage(image, _PDF_RENDER_DPI, lines=lines, text=text)
-    finally:
-        pdf.close()
+    yield from _each_pdf_page(data, read)
 
 
 def readable_text(text: str) -> bool:
@@ -158,7 +181,7 @@ def readable_text(text: str) -> bool:
 
 def _own_text(page) -> tuple[str, list[OcrLine]] | None:
     """The page's text and its lines, when the page has usable text and isn't a scan;
-    None when it should be OCRed."""
+    None when it should be OCRed. Call with `_PDFIUM_LOCK` held."""
     import pypdfium2.raw as pdfium_c
 
     # Rotated pages are left to OCR rather than turning the text boxes with the page.
@@ -211,18 +234,15 @@ def load_page(data: bytes, content_type: str | None, page: int) -> Image.Image:
     if page < 0:
         raise PageError(f"There is no page {page}")
     if is_pdf(content_type):
-        import pypdfium2 as pdfium
-
-        try:
-            pdf = pdfium.PdfDocument(data)
-        except pdfium.PdfiumError as exc:
-            raise PageError(f"Could not read PDF: {exc}") from None
-        try:
-            if page >= len(pdf):
-                raise PageError(f"PDF has no page {page}")
-            return pdf[page].render(scale=_PDF_RENDER_DPI / 72).to_pil().convert("RGB")
-        finally:
-            pdf.close()
+        with _PDFIUM_LOCK:
+            pdf = _open_pdf(data)
+            try:
+                if page >= len(pdf):
+                    raise PageError(f"PDF has no page {page}")
+                # Closing the document closes the page too.
+                return _render(pdf[page])
+            finally:
+                pdf.close()
     for index, item in enumerate(iter_pages(data, content_type)):
         if index == page:
             return item.image

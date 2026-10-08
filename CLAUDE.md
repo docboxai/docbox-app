@@ -327,6 +327,11 @@ at startup. `/api/ocr/run` (one page, answered directly) stays as the contract
 never a path. `OcrLine.box` carries line positions from engines that report them
 (PaddleOCR, Tesseract, EasyOCR) so the PDF text lines up with the scan.
 
+PDFium (pypdfium2) isn't thread-safe and two threads in it at once crash the process, while
+the reader thread, `/api/ocr/run` and MCP tools all open PDFs. Keep every PDFium call in
+`core/pages.py`, holding `_PDFIUM_LOCK`, and close pages and bitmaps there rather than leaving
+them to finalizers (`tests/backend/test_pdf_threads.py`).
+
 Engines are kept loaded between reads (`core/engine_cache.py`): reads and `/api/ocr/run` take
 the model's engine through `engine_cache.loaded(spec)`, which loads it once, keeps one
 engine (LRU), serializes runs on it with a per-engine lock and drops it after
