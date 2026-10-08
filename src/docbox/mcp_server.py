@@ -22,6 +22,7 @@ from docbox.backend.schemas import (
     EngineRemoveResult,
     ModelInfo,
     OcrLine,
+    ReadDetail,
     Settings,
     SettingsUpdate,
     StorageInfo,
@@ -48,6 +49,11 @@ Typical workflow to find the best model for a set of documents:
 4. Poll get_benchmark until state is "done"; summary.leaderboard ranks the models.
    get_benchmark_page shows every model's reading of one page with its mistakes.
 5. Suggest update_settings(default_model_id=best) if the user agrees.
+
+To read documents: read_file answers directly for up to 5 pages; for longer ones call
+start_read, then poll get_read until state is "done" and page through its text with
+from_page / next_page. PDF pages that already carry text use it instead of OCR unless
+use_pdf_text is false.
 
 Paths are on the user's computer. Removing models or engines deletes files: confirm with
 the user first. NVIDIA NIM models send images to NVIDIA's cloud and only work while the
@@ -142,20 +148,78 @@ def remove_engine(engine: Literal["paddle", "easyocr"]) -> EngineRemoveResult:
 
 # --- reading ----------------------------------------------------------------------------
 
+# read_file waits for the whole document; longer ones go through start_read/get_read, so a
+# tool call never outlasts the client's timeout.
+_MAX_READ_FILE_PAGES = 5
+# Text returned per call, in characters: about 5k tokens, well inside what agent clients
+# accept in one tool result. The rest is fetched with from_page.
+_DEFAULT_MAX_CHARS = 20_000
+_MIN_MAX_CHARS, _MAX_MAX_CHARS = 1_000, 100_000
+
 
 class ReadPageText(BaseModel):
     page: int
     text: str
+    # "pdf_text": taken from the PDF itself, not read by the model.
+    source: str = "ocr"
+    # The page alone was longer than max_chars; the saved file has all of it.
+    truncated: bool = False
     lines: list[OcrLine] | None = None
 
 
 class ReadFileResult(BaseModel):
     file: str
     model_id: str
+    read_id: str
     text: str
     pages: list[ReadPageText]
+    # More pages than fit in max_chars: get_read(read_id, from_page=next_page) for the rest.
+    next_page: int | None = None
     seconds: float | None
     output_path: str | None
+
+
+class ReadStatus(BaseModel):
+    read_id: str
+    file: str
+    model_id: str
+    state: str
+    pages_done: int
+    pages_total: int | None
+    error: str | None
+    seconds: float | None
+    output_path: str | None
+    # Filled once the read is done, from from_page while they fit in max_chars.
+    pages: list[ReadPageText]
+    next_page: int | None = None
+
+
+def _check_budget(from_page: int, max_chars: int) -> None:
+    if from_page < 1:
+        raise ToolError("invalid: from_page starts at 1")
+    if not _MIN_MAX_CHARS <= max_chars <= _MAX_MAX_CHARS:
+        raise ToolError(f"invalid: max_chars must be {_MIN_MAX_CHARS}-{_MAX_MAX_CHARS}")
+
+
+def _pages_within(
+    detail: ReadDetail, from_page: int, max_chars: int, include_lines: bool,
+) -> tuple[list[ReadPageText], int | None]:
+    """Whole pages from from_page while their text fits in max_chars (the first one is
+    cut to fit if it alone is longer), and the page to continue from, if any."""
+    out: list[ReadPageText] = []
+    used = 0
+    for n in range(from_page, len(detail.pages) + 1):
+        page = detail.pages[n - 1]
+        if out and used + len(page.text) > max_chars:
+            return out, n
+        truncated = len(page.text) > max_chars
+        text = page.text[:max_chars] if truncated else page.text
+        out.append(ReadPageText(page=n, text=text, source=page.source, truncated=truncated,
+                                lines=page.lines if include_lines else None))
+        used += len(text)
+        if truncated:
+            return out, n + 1 if n < len(detail.pages) else None
+    return out, None
 
 
 @server.tool(annotations=_CHANGES)
@@ -164,22 +228,76 @@ def read_file(
     model_id: str | None = None,
     format: Literal["txt", "md", "json", "pdf"] = "txt",
     include_lines: bool = False,
+    use_pdf_text: bool = True,
+    max_chars: int = _DEFAULT_MAX_CHARS,
 ) -> ReadFileResult:
-    """Read the text of an image or PDF (every page) with one model, save it like the
+    """Read the text of an image or a PDF of up to 5 pages with one model, save it like the
     DocBox app does (in the output folder, as txt/md/json or a searchable pdf) and return
-    the text. model_id defaults to the default model setting. include_lines adds each
-    line's confidence and position."""
+    the text. Longer documents: use start_read. model_id defaults to the default model
+    setting. PDF pages that carry their own text use it unless use_pdf_text is false.
+    include_lines adds each line's confidence and position. At most max_chars of text
+    come back; next_page says where get_read continues."""
+    _check_budget(1, max_chars)
     model_id = model_id or settings_service.get_settings().default_model_id
     if not model_id:
         raise ToolError("invalid: no model_id given and no default model set")
-    detail = _call(ocr.read_file, path, model_id, format)
+    pages = _call(ocr.page_count, path)
+    if pages > _MAX_READ_FILE_PAGES:
+        raise ToolError(
+            f"invalid: this document has {pages} pages; read_file waits for at most "
+            f"{_MAX_READ_FILE_PAGES}. Use start_read, then get_read."
+        )
+    detail = _call(ocr.read_file, path, model_id, format, use_pdf_text=use_pdf_text)
+    shown, next_page = _pages_within(detail, 1, max_chars, include_lines)
     return ReadFileResult(
-        file=path, model_id=model_id, text=detail.text, seconds=detail.seconds,
+        file=path, model_id=model_id, read_id=detail.id, text="\n\n".join(p.text for p in shown),
+        pages=shown, next_page=next_page, seconds=detail.seconds,
         output_path=detail.output_path,
-        pages=[
-            ReadPageText(page=n, text=p.text, lines=p.lines if include_lines else None)
-            for n, p in enumerate(detail.pages, start=1)
-        ],
+    )
+
+
+@server.tool(annotations=_CHANGES)
+def start_read(
+    path: str,
+    model_id: str | None = None,
+    format: Literal["txt", "md", "json", "pdf"] = "txt",
+    use_pdf_text: bool = True,
+) -> ReadStatus:
+    """Start reading an image or PDF of any length in the background and return at once;
+    poll get_read(read_id) until state is "done" (or "error"). The text is saved like
+    read_file saves it. model_id defaults to the default model setting."""
+    model_id = model_id or settings_service.get_settings().default_model_id
+    if not model_id:
+        raise ToolError("invalid: no model_id given and no default model set")
+    entry = _call(ocr.start_read, path, model_id, format, use_pdf_text=use_pdf_text)
+    return ReadStatus(
+        read_id=entry.id, file=path, model_id=entry.model_id, state=entry.state,
+        pages_done=entry.pages_done, pages_total=entry.pages_total, error=entry.error,
+        seconds=entry.seconds, output_path=entry.output_path, pages=[],
+    )
+
+
+@server.tool(annotations=_READ_ONLY)
+def get_read(
+    read_id: str,
+    from_page: int = 1,
+    max_chars: int = _DEFAULT_MAX_CHARS,
+    include_lines: bool = False,
+) -> ReadStatus:
+    """A read's progress (pages_done of pages_total) and, once state is "done", its text:
+    whole pages from from_page while they fit in max_chars. Call again with
+    from_page=next_page for the rest."""
+    _check_budget(from_page, max_chars)
+    detail = _call(ocr.get_read, read_id)
+    shown, next_page = (
+        _pages_within(detail, from_page, max_chars, include_lines)
+        if detail.state == "done" else ([], None)
+    )
+    return ReadStatus(
+        read_id=detail.id, file=detail.file_name, model_id=detail.model_id,
+        state=detail.state, pages_done=detail.pages_done, pages_total=detail.pages_total,
+        error=detail.error, seconds=detail.seconds, output_path=detail.output_path,
+        pages=shown, next_page=next_page,
     )
 
 
