@@ -46,6 +46,11 @@ class EasyOcrEngine:
         )
 
     def is_downloaded(self) -> bool:
+        if self._reader is not None:
+            # Loaded, and kept loaded between reads (engine_cache checks this on every use):
+            # building a second Reader to check would hold two in memory. The weights are
+            # there unless another process removed the model, which removes them all.
+            return any(_cache_dir().glob("*.pth"))
         try:
             self._try_build_reader(download_enabled=False)
         except Exception:  # noqa: BLE001 — package absent, models absent, etc.
