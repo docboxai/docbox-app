@@ -26,7 +26,6 @@ from __future__ import annotations
 import gc
 import os
 import threading
-import time
 from collections import OrderedDict
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -71,7 +70,10 @@ class _Entry:
     engine: OCREngine
     lock: threading.Lock = field(default_factory=threading.Lock)
     loaded: bool = False
-    last_used: float = field(default_factory=time.monotonic)
+    # Uses that have ended. An idle timer remembers the count it was set for and lets the
+    # engine go only if no use has ended since; it never asks the clock, which on Windows
+    # (CPython 3.12) ticks every 15.6 ms and can say a timer woke before its time.
+    uses: int = 0
     timer: threading.Timer | None = None
 
 
@@ -118,31 +120,35 @@ def loaded(spec: ModelSpec) -> Iterator[OCREngine]:
         yield engine
         return
     entry = _entry_for(spec, engine)
-    with entry.lock:
-        try:
-            # Checked on every use: another process (the CLI, an agent) may have removed
-            # the model since it was loaded.
-            if not entry.engine.is_downloaded():
-                raise NotDownloaded(spec)
-            if not entry.loaded:
-                entry.engine.load()
-                entry.loaded = True
-        except BaseException:
-            # Never keep an engine that failed to load or lost its files.
-            with _entries_lock:
-                _forget(entry)
-            raise
-        try:
-            yield entry.engine
-        except BaseException:
-            # A run that failed may have left the engine in a bad state: the next read
-            # gets a fresh one, as it did before engines were kept.
-            with _entries_lock:
-                _forget(entry)
-            raise
-        finally:
-            entry.last_used = time.monotonic()
-            _schedule_idle_unload(entry)
+    try:
+        with entry.lock:
+            try:
+                # Checked on every use: another process (the CLI, an agent) may have
+                # removed the model since it was loaded.
+                if not entry.engine.is_downloaded():
+                    raise NotDownloaded(spec)
+                if not entry.loaded:
+                    entry.engine.load()
+                    entry.loaded = True
+            except BaseException:
+                # Never keep an engine that failed to load or lost its files.
+                with _entries_lock:
+                    _forget(entry)
+                raise
+            try:
+                yield entry.engine
+            except BaseException:
+                # A run that failed may have left the engine in a bad state: the next
+                # read gets a fresh one, as it did before engines were kept.
+                with _entries_lock:
+                    _forget(entry)
+                raise
+            finally:
+                entry.uses += 1
+    finally:
+        # Only once the lock is free: a timer that finds it held leaves the engine to
+        # the use holding it, and this is where that use sets the next timer.
+        _schedule_idle_unload(entry)
 
 
 def _schedule_idle_unload(entry: _Entry) -> None:
@@ -153,18 +159,20 @@ def _schedule_idle_unload(entry: _Entry) -> None:
             entry.timer = None
         if not idle or _entries.get(entry.model_id) is not entry:
             return
-        entry.timer = threading.Timer(idle, _unload_if_idle, args=(entry,))
+        entry.timer = threading.Timer(idle, _unload_if_idle, args=(entry, entry.uses))
         entry.timer.daemon = True
         entry.timer.start()
 
 
-def _unload_if_idle(entry: _Entry) -> None:
-    # In use right now: it reschedules itself when that use ends.
+def _unload_if_idle(entry: _Entry, uses: int) -> None:
+    # In use right now: that use sets a new timer once it's done.
     if not entry.lock.acquire(blocking=False):
         return
     try:
         with _entries_lock:
-            if time.monotonic() - entry.last_used < idle_seconds():
+            # A use ended since this timer was set (one that fired as it was being
+            # cancelled): the timer that use set decides.
+            if entry.uses != uses:
                 return
             _forget(entry)
     finally:
