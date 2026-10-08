@@ -120,6 +120,29 @@ fn no_window(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
+/// The AppImage's launcher points PYTHONHOME, PYTHONPATH and LD_LIBRARY_PATH into its own
+/// mounted image. Inherited, they send uv's Python looking for its standard library in
+/// there ("No module named 'encodings'"), so child processes get them back without the
+/// AppImage's parts. Other launches have no APPDIR and are left alone.
+fn outside_appimage(cmd: &mut Command) -> &mut Command {
+    let Some(appdir) = std::env::var_os("APPDIR") else {
+        return cmd;
+    };
+    cmd.env_remove("PYTHONHOME")
+        .env_remove("PYTHONPATH")
+        .env_remove("PYTHONDONTWRITEBYTECODE");
+    if let Some(paths) = std::env::var_os("LD_LIBRARY_PATH") {
+        let kept: Vec<PathBuf> = std::env::split_paths(&paths)
+            .filter(|p| !p.as_os_str().is_empty() && !p.starts_with(&appdir))
+            .collect();
+        match std::env::join_paths(kept) {
+            Ok(joined) if !joined.is_empty() => cmd.env("LD_LIBRARY_PATH", joined),
+            _ => cmd.env_remove("LD_LIBRARY_PATH"),
+        };
+    }
+    cmd
+}
+
 /// uv env vars that pin the managed env, interpreter and cache to the app's data dir.
 /// Passed to the backend too, so its own on-demand `uv sync` (engine installs) targets
 /// the same environment.
@@ -175,6 +198,7 @@ fn ensure_runtime(app: &AppHandle, l: &Layout) -> Result<(), String> {
 
     let uv = l.uv.as_ref().ok_or("no uv sidecar")?;
     let mut cmd = Command::new(uv);
+    outside_appimage(&mut cmd);
     cmd.args(["sync", "--frozen", "--no-dev", "--no-install-project", "--project"])
         .arg(&l.project_dir)
         .env("UV_PYTHON_PREFERENCE", "only-managed")
@@ -243,6 +267,7 @@ fn spawn_backend(l: &Layout, port: u16) -> Result<Child, String> {
     let log = File::create(l.logs_dir.join("backend.log")).map_err(|e| e.to_string())?;
     let log_err = log.try_clone().map_err(|e| e.to_string())?;
     let mut cmd = Command::new(&l.python);
+    outside_appimage(&mut cmd);
     cmd.args(["-m", "docbox.backend.main", "--host", "127.0.0.1", "--port", &port.to_string()])
         .current_dir(&l.project_dir)
         .env("DOCBOX_DATA_DIR", &l.data_dir)
@@ -388,6 +413,10 @@ fn main() {
         // before installing (on Windows the updater exits the app to run the installer).
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        // Opens a few fixed web pages in the default browser (the capability lists them):
+        // the releases page when an in-app update can't be used, and where to get an
+        // NVIDIA key, Ollama or Tesseract.
+        .plugin(tauri_plugin_opener::init())
         .manage(Backend::default())
         .setup(|app| {
             // The window shows right away (on the setup screen); the backend comes up

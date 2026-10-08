@@ -2,9 +2,11 @@ name: Release
 
 # Releases come only from main. Bump the version in tauri.conf.json, pyproject.toml and
 # src-tauri/Cargo.toml on main, then push a tag like v0.2.0 on that main commit. The
-# `check` job refuses anything else before an installer is built. The build makes a
-# *draft* GitHub Release; review it, then publish it: that's what existing installs'
-# updater sees. MSI needs a plain x.y.z version (no "-rc1" suffixes).
+# `check` job refuses anything else before an installer is built. Each `build` job makes
+# one platform's installers, signed for the in-app updater; the `release` job names them
+# DocBox-<version>-<os>-<arch>, writes the updater's latest.json and puts them all in a
+# *draft* GitHub Release. Edit its list of changes, then publish it: that's when installed
+# copies see the update. MSI needs a plain x.y.z version (no "-rc1" suffixes).
 on:
   push:
     tags: ["v*"]
@@ -47,6 +49,7 @@ jobs:
           [ "$tag" = "$conf" ] && [ "$tag" = "$py" ] && [ "$tag" = "$cargo" ] || {
             echo "::error::Version mismatch: bump all three to $tag on main before tagging"; exit 1; }
 
+      # Every installed copy, back to 0.1.0, only accepts updates signed with this key.
       - name: Check the updater signing key is set
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -57,9 +60,6 @@ jobs:
 
   build:
     needs: check
-    permissions:
-      # Creates the draft release and uploads the installers to it.
-      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -111,16 +111,6 @@ jobs:
           print("sidecar:", dest)
           EOF
 
-      - name: Point the updater at this repository's releases
-        shell: bash
-        # Python rather than `sed -i`, whose syntax differs on macOS.
-        run: |
-          python - <<'EOF'
-          import os, pathlib
-          p = pathlib.Path("src-tauri/tauri.conf.json")
-          p.write_text(p.read_text().replace("OWNER/REPO", os.environ["GITHUB_REPOSITORY"]))
-          EOF
-
       - name: Tauri system dependencies
         if: runner.os == 'Linux'
         run: |
@@ -139,34 +129,122 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      # Third-party actions in this write-access job are pinned to a commit.
+      # Third-party actions that build what goes into the installers are pinned to a commit.
       - uses: cargo-bins/cargo-binstall@7bebc2e59eb8820162b7ac8f62a92bfdb2732447 # v1.25.1
       - run: cargo binstall tauri-cli@=${{ env.TAURI_CLI_VERSION }} --no-confirm
 
-      # Runs `cargo tauri build` from the repository root, so the CLI takes frontend/ as
-      # the frontend directory and runs tauri.conf.json's beforeBuildCommand there.
-      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # action-v0.6.2
+      # From the repository root, so the CLI takes frontend/ as the frontend directory and
+      # runs tauri.conf.json's beforeBuildCommand there.
+      # With the key set, each installer also gets a .sig for the updater (and macOS an
+      # .app.tar.gz, the form its updater installs).
+      - name: Build the installers
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo tauri build
+
+      # The installers and their signatures, not Tauri's staging folders beside them.
+      - uses: actions/upload-artifact@v7
         with:
-          tauriScript: cargo tauri
-          tagName: ${{ github.ref_name }}
-          releaseName: DocBox ${{ github.ref_name }}
-          releaseBody: |
-            <img src="https://raw.githubusercontent.com/${{ github.repository }}/main/src-tauri/icons/128x128%402x.png" width="64" height="64" alt="DocBox logo">
+          name: installers-${{ matrix.os }}
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/**/*.sig
+          if-no-files-found: error
+          # Long enough to re-run the release job.
+          retention-days: 7
 
-            - **Windows 10 or 11:** run the `.exe` installer, or the `.msi`. It isn't code-signed
-              yet, so SmartScreen may warn about an unrecognized app: choose **More info**, then
-              **Run anyway**.
-            - **macOS 12 or later, Apple Silicon:** open the `.dmg` and drag DocBox to
-              Applications. It isn't notarized yet, so macOS blocks the first launch: open
-              **System Settings › Privacy & Security** and choose **Open Anyway** next to DocBox.
-            - **Linux:** download the `.AppImage`, `chmod +x` it and run it, or install the `.deb`.
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      # Creates the draft release and uploads the installers to it.
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: installers-*
+          path: installers
 
-            The first launch sets up DocBox's own Python runtime. It takes a minute or two and
-            needs an internet connection.
-          releaseDraft: true
-          prerelease: false
-          includeUpdaterJson: true
+      # One file per installer, named like DocBox-0.2.0-windows-x86-64.exe, each with its
+      # updater signature beside it. `mv` fails if a pattern matches no file or several, and
+      # anything left over fails the job, so a missing or unexpected file never goes out.
+      - name: Name the installers
+        run: |
+          shopt -s globstar
+          v="${GITHUB_REF_NAME#v}"
+          mkdir dist sigs
+          name() {  # <pattern> <released name>
+            mv installers/**/$1     "dist/$2"
+            mv installers/**/$1.sig "sigs/$2.sig"
+          }
+          name '*-setup.exe'  "DocBox-$v-windows-x86-64.exe"
+          name '*.msi'        "DocBox-$v-windows-x86-64.msi"
+          name '*.app.tar.gz' "DocBox-$v-macos-arm-64.app.tar.gz"
+          name '*.AppImage'   "DocBox-$v-linux-x86-64.AppImage"
+          name '*.deb'        "DocBox-$v-linux-x86-64.deb"
+          name '*.rpm'        "DocBox-$v-linux-x86-64.rpm"
+          # The .dmg is for first installs only; the updater uses the .app.tar.gz.
+          mv installers/**/*.dmg "dist/DocBox-$v-macos-arm-64.dmg"
+          left=$(find installers -type f)
+          [ -z "$left" ] || { echo "::error::Built but not released: $left"; exit 1; }
+          ls -l dist sigs
+
+      # What installed copies download at releases/latest/download/latest.json: for each
+      # platform and kind of install, the file to fetch and its signature. The updater
+      # looks up "<os>-<arch>-<installer>" first, then "<os>-<arch>".
+      - name: Write latest.json
+        env:
+          GH_REPO: ${{ github.repository }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, pathlib
+          from datetime import datetime, timezone
+          tag = os.environ["GITHUB_REF_NAME"]
+          v = tag.removeprefix("v")
+          base = f"https://github.com/{os.environ['GH_REPO']}/releases/download/{tag}"
+          files = {
+              "windows-x86_64": f"DocBox-{v}-windows-x86-64.exe",
+              "windows-x86_64-nsis": f"DocBox-{v}-windows-x86-64.exe",
+              "windows-x86_64-msi": f"DocBox-{v}-windows-x86-64.msi",
+              "darwin-aarch64": f"DocBox-{v}-macos-arm-64.app.tar.gz",
+              "darwin-aarch64-app": f"DocBox-{v}-macos-arm-64.app.tar.gz",
+              "linux-x86_64": f"DocBox-{v}-linux-x86-64.AppImage",
+              "linux-x86_64-appimage": f"DocBox-{v}-linux-x86-64.AppImage",
+              "linux-x86_64-deb": f"DocBox-{v}-linux-x86-64.deb",
+              "linux-x86_64-rpm": f"DocBox-{v}-linux-x86-64.rpm",
+          }
+          platforms = {
+              key: {"url": f"{base}/{name}", "signature": pathlib.Path(f"sigs/{name}.sig").read_text().strip()}
+              for key, name in files.items()
+          }
+          manifest = {
+              "version": v,
+              "notes": f"https://github.com/{os.environ['GH_REPO']}/releases/tag/{tag}",
+              "pub_date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": platforms,
+          }
+          pathlib.Path("dist/latest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          EOF
+          cat dist/latest.json
+
+      # GitHub's list of changes since the last release, to edit in the draft. If this
+      # fails after the draft exists, delete the draft and re-run the job.
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          {
+            gh api "repos/$GH_REPO/releases/generate-notes" -f tag_name="$GITHUB_REF_NAME" --jq .body
+            echo
+            echo "DocBox isn't code-signed yet. If Windows or macOS blocks it, see [Install](https://github.com/$GH_REPO#install) in the README."
+          } > notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --verify-tag \
+            --title "DocBox $GITHUB_REF_NAME" --notes-file notes.md

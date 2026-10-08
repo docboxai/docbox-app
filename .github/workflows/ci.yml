@@ -35,6 +35,20 @@ jobs:
       - run: npm ci --prefix frontend
       - run: npm --prefix frontend run build
 
+  website:
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: website/package.json
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run build
+
   shell:
     # Windows too: main.rs has Windows-only code (process-tree kill, no console window)
     # that a Linux build never compiles.
