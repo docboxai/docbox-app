@@ -269,7 +269,9 @@ Tests use fake engines in `tests/benchmark/bench_fakes.py`, loaded into workers 
 1.x `FastMCP`). Tools are plain sync functions over `service/` (the SDK runs them on worker
 threads and diverts stray stdout writes, so a chatty OCR library can't corrupt the
 protocol); `ServiceError`s become `ToolError("<code>: <detail>")`. Long work returns an id
-to poll (`install_model` → `get_install_status`, `start_benchmark` → `get_benchmark`). Mark
+to poll (`install_model` → `get_install_status`, `start_benchmark` → `get_benchmark`,
+`start_read` → `get_read`; `read_file` refuses documents over 5 pages). Text comes back
+in whole pages within `max_chars` (`next_page` continues). Mark
 new tools with the right `ToolAnnotations` (`_DELETES` for anything that removes files).
 `docs/agents.md` is the user-facing guide; keep it in step with the tool list.
 `DOCBOX_PRELOAD` (`docbox/plugins.py`) imports extra model-registering modules in every
@@ -338,7 +340,7 @@ rotated, and images cover at most `_MAX_IMAGE_COVER` of it (scans are OCRed agai
 with an older OCR layer). Its lines come from pdfium's text rectangles, boxed in the
 rendered page's pixels so a searchable PDF lines up. The model is loaded only at the first
 page that needs OCR. `use_pdf_text=False` (reads API form field, the Read a file switch,
-`docbox read --ocr-all`) OCRs every page; benchmarks always do
+`docbox read --ocr-all`, MCP `use_pdf_text`) OCRs every page; benchmarks always do
 (`iter_pages`).
 
 `core/config_store.py` also holds the default model, the output folder and the cloud

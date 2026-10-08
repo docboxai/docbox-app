@@ -44,13 +44,19 @@ Without installing: `{"command": "uvx", "args": ["--from", "git+https://github.c
 | `get_install_status(job_id)` | Poll until `done` / `error` |
 | `remove_model(model_id)` | Deletes a model's files (destructive) |
 | `list_engines` / `remove_engine(engine)` | Engine packages and their disk use / uninstall (destructive) |
-| `read_file(path, model_id?, format?, include_lines?)` | Reads every page, saves the text like the app, returns it |
+| `read_file(path, model_id?, format?, include_lines?, use_pdf_text?, max_chars?)` | Reads a file of up to 5 pages, saves the text like the app, returns it (at most `max_chars`; `next_page` says where `get_read` continues) |
+| `start_read(path, model_id?, format?, use_pdf_text?)` | Starts reading a file of any length in the background; returns its `read_id` at once |
+| `get_read(read_id, from_page?, max_chars?, include_lines?)` | Poll until `done` / `error`; then its text, whole pages from `from_page` while they fit in `max_chars` |
 | `get_settings` / `update_settings(default_model_id?, cloud_enabled?)` | Default model, cloud switch |
 | `start_benchmark(paths, models?, name?, recursive?, install_missing?, ignore_case?)` | Starts a benchmark; returns its id at once |
 | `get_benchmark(run_id)` | State, progress and the live leaderboard |
 | `get_benchmark_page(run_id, file_id, page?, against?)` | Every model's reading of one page, mistakes marked |
 | `list_benchmarks` / `cancel_benchmark` / `delete_benchmark` | Saved runs |
 | resource `docbox://benchmarks/{run_id}/report` | The run's report, Markdown |
+
+PDF pages that already carry their own text (an exported invoice, a report saved from a
+word processor) use that text instead of OCR; pass `use_pdf_text=false` to read every page
+with the model. Each page in a result says which it was (`source`: `ocr` or `pdf_text`).
 
 Errors come back as tool errors whose text starts with a code: `not_found`, `invalid`,
 `conflict`, `needs_prerequisite` (the user must install Tesseract or Ollama), `blocked`
