@@ -49,7 +49,8 @@ plain `npm run dev`/`npm run build`). Run from `src-tauri/`, it finds no `packag
 falls back to the repository root, where those hooks fail. The release workflow runs
 `cargo tauri build` from the root too. Dev builds run the repo's `.venv/…/python`, so `uv sync`
 must have been run first. A plain `uv sync` is exact: it uninstalls extras you didn't
-pass, so always pass the extras you need.
+pass, so always pass the extras you need. Quit an installed DocBox first: it has the same
+identifier, so the single-instance check hands the dev build's launch to it.
 
 ### Build an installer locally
 
@@ -240,6 +241,13 @@ mount and would break the managed Python.
   `python.exe` launcher.
 - **Benchmark workers:** they get the same kind of lifeline from whoever runs the benchmark
   (the app's backend, the CLI, the MCP server). See Benchmarks below.
+- **One instance:** `tauri-plugin-single-instance`, registered first, makes a second launch
+  show and focus the running window instead of starting a second shell, backend and
+  first-run `uv sync` on the same data dir. The close handler ends the process with
+  `std::process::exit`, which skips `RunEvent::Exit`, so it calls the plugin's `destroy`
+  itself. The updater's relaunch goes through `request_restart`, which does fire
+  `RunEvent::Exit`. Linux needs a D-Bus session bus for the check (without one the app runs
+  unchecked).
 
 ### The service layer: one implementation behind the app, the CLI and MCP
 
