@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, type DeviceCapabilities, type Settings } from "./api";
 
-export type ViewId = "setup" | "models" | "ocr" | "platforms" | "device";
+export type ViewId = "setup" | "models" | "ocr" | "bench" | "platforms" | "device";
 
 interface AppState {
   view: ViewId;

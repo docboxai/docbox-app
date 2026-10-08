@@ -375,6 +375,30 @@ def test_unfinished_reads_are_marked_interrupted_on_startup(data_dir, page_spec)
     assert history.get(entry.id).state == "error"
 
 
+def test_startup_leaves_reads_of_other_live_processes_alone(data_dir, page_spec) -> None:
+    """The CLI and the MCP server write the same history: a read one of them is still doing
+    must not be marked failed when the app starts, but one whose process died is."""
+    import subprocess
+    import sys
+
+    from docbox.backend.core import history
+
+    other = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        live = history.create("live.png", "test-page-model", "Page model", "txt")
+        history.update(live.id, state="reading", pid=other.pid)
+        gone = history.create("gone.png", "test-page-model", "Page model", "txt")
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        history.update(gone.id, state="reading", pid=dead.pid)
+        history.mark_interrupted()
+        assert history.get(live.id).state == "reading"
+        assert history.get(gone.id).state == "error"
+    finally:
+        other.kill()
+        other.wait()
+
+
 def test_read_ids_cannot_name_paths(client: TestClient, data_dir) -> None:
     assert client.get("/api/reads/..%2F..%2Fsettings").status_code == 404
     assert client.post("/api/reads/notanid/open").status_code == 404
@@ -403,3 +427,22 @@ def test_download_serves_only_the_recorded_output(client: TestClient, data_dir, 
     Path(body["output_path"]).unlink()
     assert client.get(f"/api/reads/{read_id}/file").status_code == 410
     assert client.get("/api/reads/0123/file").status_code == 404
+
+
+def test_a_finished_read_has_its_pages_saved_before_it_shows_done(data_dir, monkeypatch) -> None:
+    from docbox.backend.core import history
+
+    entry = history.create("scan.png", "m", "M", "txt")
+    seen = []
+    real_save = history._save_index
+
+    def save(entries):
+        for e in entries:
+            if e.state == "done":
+                seen.append(history._detail_path(e.id).exists())
+        real_save(entries)
+
+    monkeypatch.setattr(history, "_save_index", save)
+    history.finish(entry.id, [ReadPage(lines=[], text="hello")], state="done")
+    assert seen == [True]
+    assert history.get_detail(entry.id).text == "hello"

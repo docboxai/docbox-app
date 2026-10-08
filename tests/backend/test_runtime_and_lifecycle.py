@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from docbox.backend.api import routes_models
 from docbox.backend.core import prerequisites, runtime
 from docbox.backend.core.jobs import job_store
 from docbox.backend.core.registry import ModelSpec, registry
 from docbox.backend.engines.paddleocr_engine import PaddleOcrEngine
+from docbox.service import models as service_models
 
 
 @pytest.fixture()
@@ -250,5 +250,9 @@ def test_uninstall_unknown_engine_is_404(client) -> None:
 
 def test_scaled_progress_maps_into_stage_range() -> None:
     job = job_store.create("scaled-test")
-    routes_models._scaled(job.job_id, "installing", 0, 40)(50.0, "x")
+    service_models.stage_progress(
+        "installing", 0, 40,
+        lambda state, pct, msg: job_store.update(job.job_id, progress_pct=pct),
+        lambda: False,
+    )(50.0, "x")
     assert job_store.get(job.job_id).progress_pct == pytest.approx(20.0)

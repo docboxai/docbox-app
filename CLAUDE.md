@@ -82,6 +82,14 @@ calls `/api` on the page's own origin and Vite's dev/preview server proxies it t
 `http://127.0.0.1:8756` (override with `DOCBOX_BACKEND_URL`) — start the backend standalone
 alongside it. Same-origin, so the backend's CORS allowlist doesn't apply there.
 
+### CLI (`docbox`)
+
+```sh
+uv run docbox --help
+uv run docbox models list --json
+uv run docbox read invoice.pdf --model paddleocr-mobile-en --format md
+```
+
 ### Tests and lint
 
 ```sh
@@ -211,6 +219,62 @@ Child processes (the bootstrap `uv`, the backend) go through `outside_appimage` 
 `main.rs`: the AppImage launcher's PYTHONHOME/PYTHONPATH/LD_LIBRARY_PATH point into its
 mount and would break the managed Python.
 
+### The service layer: one implementation behind the app, the CLI and MCP
+
+`src/docbox/service/` holds the operations (models, engines, device, settings, reading
+files) as plain functions with no FastAPI imports. The HTTP routes (`backend/api/`), the
+`docbox` CLI (`src/docbox/cli/`, argparse) and the MCP server are thin front ends over it.
+Failures are `service.errors.ServiceError` subclasses: routes map `.status` to an HTTP code
+via `api/errors.py::http_errors()`, the CLI maps them to exit codes (`cli/output.py`: 3 needs
+an external program, 4 blocked) and `{"error": {"code", "detail"}}` on stderr with `--json`.
+Put new behaviour in `service/`, not in a route, so every front end gets it.
+
+The CLI runs engines in-process and shares the desktop app's data dir: `paths.get_data_dir()`
+is `DOCBOX_DATA_DIR`, else the app's folder (`io.github.docboxai.docbox`, Tauri's
+`app_local_data_dir`) when it exists, else platformdirs'. Because several processes can now
+write it, read history and settings take cross-process file locks (`core/locks.py`,
+`filelock`), and installing a model holds a per-model lock (a second process gets
+`Conflict`; removing an engine takes all of its models' locks). Each read records its
+process (`ReadSummary.pid`), so app startup only marks reads of dead processes as failed.
+`runtime/state.json` belongs to the installed app's managed env: only `managed` mode reads
+or writes it. `docbox` (`run()`) moves fd 1 to stderr under `--json` and writes the result
+to a private copy, because engines running in-process print to stdout. `core/runtime.py` has a third mode, `tool` (a standalone `uv tool install` /
+pip install with no project to sync): extras go in with `uv pip install` pinned by
+`core/pins/constraints.txt`, exported from `uv.lock` by `scripts/export_pins.sh`; rerun it
+whenever `uv.lock` changes (`tests/service/test_shared_state.py` fails when it's stale).
+
+Tests: `tests/conftest.py` provides `data_dir` (temp `DOCBOX_DATA_DIR`) and `fake_model` /
+`installed_fake` (a registered `test-fake` model that reads instantly), and the CLI is run
+in-process with `docbox.cli.main.main(argv)`.
+
+### Benchmarks (`src/docbox/benchmark/`)
+
+`runner.create()` checks the dataset (`dataset.py`: files/folders with `.gt.txt` /
+`.pN.gt.txt` sidecars, or a `.json`/`.jsonl` manifest) and models up front and saves a
+queued run; `runner.execute()` then runs each model **in its own worker process**
+(`python -m docbox.benchmark.worker`, JSON job on stdin, one JSON event per line on a
+private copy of stdout; libraries' own prints are moved to stderr) — for honest peak memory
+(psutil, sampled by the parent), crash/hang isolation (per-page timeout) and so native libs
+never load in the backend. Runs live in `<data>/benchmarks/<run_id>/` (`store.py`); only the
+running process writes them, a `cancel` file stops them from any process, and a running run
+whose pid is gone reads as `interrupted`. `report.py` builds the leaderboard (CER/WER via
+rapidfuzz on NFKC/whitespace-normalised text, failed pages scored as empty) and the per-page
+compare view with diff spans ("slips"). `service/benchmarks.py` is the front-end API.
+Tests use fake engines in `tests/benchmark/bench_fakes.py`, loaded into workers through
+`DOCBOX_PRELOAD`.
+
+### MCP server (`src/docbox/mcp_server.py`)
+
+`docbox mcp` serves an MCP server over stdio (official `mcp` SDK 2.x: `MCPServer`, not the
+1.x `FastMCP`). Tools are plain sync functions over `service/` (the SDK runs them on worker
+threads and diverts stray stdout writes, so a chatty OCR library can't corrupt the
+protocol); `ServiceError`s become `ToolError("<code>: <detail>")`. Long work returns an id
+to poll (`install_model` → `get_install_status`, `start_benchmark` → `get_benchmark`). Mark
+new tools with the right `ToolAnnotations` (`_DELETES` for anything that removes files).
+`docs/agents.md` is the user-facing guide; keep it in step with the tool list.
+`DOCBOX_PRELOAD` (`docbox/plugins.py`) imports extra model-registering modules in every
+process (CLI, MCP server, benchmark workers); tests rely on it.
+
 ### The "never silently install untrusted binaries" rule
 
 System-level programs (Tesseract, Ollama) are never installed without the user's
@@ -290,6 +354,19 @@ progress, pause/resume, remove) is one hook, `lib/useModelJob.ts`, rendered by
 drops reach the Read a file drop zone. When adding a
 new engine, add its icon/label/capabilities/guidance to the maps in
 `frontend/src/lib/engineMeta.ts` (shared by Setup and Models).
+
+The Benchmarks view (`BenchmarksView.tsx`: drop zone, model picker, batch cards;
+`BenchmarkRun.tsx`: leaderboard and Compare) talks to `/api/benchmarks`
+(`api/routes_benchmarks.py`). Uploads are sent with their folder path as the multipart
+file name so `.gt.txt` sidecars land next to their documents in the run's `inputs/`; the
+route sanitises those paths. Runs from the CLI and MCP appear there too (same data dir). `BenchmarkChart.tsx` is the
+accuracy-vs-cost scatter (hand-built SVG, no chart library): "This run" plots the run's
+leaderboard with a Pareto line; "OCRBench v1/v2" plots published scores from
+`benchmark/ocrbench.json` (served at `/api/benchmarks/reference`) against catalog download
+size, without ranking them, since sources differ. Every score there needs a source URL and a
+`self_reported` flag; `tests/benchmark/test_reference.py` checks they name catalog models.
+Scatter colours: at most three series hues (`--color-series-1..3`, validated all-pairs for
+colour-blind readers) plus a neutral; every point is also labelled.
 
 Every engine implements `delete()`; PaddleOCR's keeps model dirs another *downloaded*
 catalog entry still uses (all PP-OCRv5 language families share `PP-OCRv5_server_det`).

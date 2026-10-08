@@ -41,6 +41,7 @@ never leave your computer unless you choose the optional NVIDIA cloud engine.
 - [Troubleshooting](#troubleshooting)
 - [Privacy](#privacy)
 - [Development](#development)
+- [Command line](#command-line)
 - [Releasing](#releasing)
 - [Running the backend in Docker](#running-the-backend-in-docker)
 - [License](#license)
@@ -116,6 +117,21 @@ computer. The button always tells you what a click will do:
 - **Needs Ollama** / **Needs Tesseract**: it needs a helper program (see step 5).
 
 ![An engine's page: versions, sizes and advice](docs/screenshots/04-engine-detail.png)
+
+### Benchmarks: which model reads your documents best?
+
+**Benchmarks** is a test bench for your own documents. Drop a folder (or pick files), tick
+the models to compare and click **Start benchmark**: every page goes to every model, one
+model at a time. Each run becomes a batch you can open, run again or delete.
+
+The leaderboard shows each model's accuracy, speed per page, load time, peak memory and
+confidence, best values in green. **Compare** puts a page next to every model's reading of
+it, with each mistake ("slip") highlighted. One click makes the winner your default model.
+
+Accuracy needs the correct text: put `invoice.gt.txt` next to `invoice.pdf` (or
+`invoice.p2.gt.txt` for page 2 only). Without it, models are ranked by speed.
+
+![Benchmarks: a leaderboard and every model's reading of one page](docs/screenshots/10-benchmarks.png)
 
 ### 5. Connections: Ollama, Tesseract and NVIDIA
 
@@ -253,6 +269,55 @@ A plain `uv sync` removes extras you didn't pass, so always pass the ones you wa
 
 The logo's source is `src-tauri/icons/logo.svg`; regenerate the icon set with
 `cargo tauri icon src-tauri/icons/logo.svg`.
+
+## Command line
+
+DocBox also works from a terminal, and AI agents can use it the same way (every command
+takes `--json`):
+
+```sh
+uv tool install git+https://github.com/docboxai/docbox-app   # or, from a checkout: uv run docbox
+docbox device                                    # memory, processor, disk, data folder
+docbox models list --fits                        # what runs well here
+docbox models install paddleocr-mobile-en        # engine + model, one step
+docbox read scans/ --model paddleocr-mobile-en --format md --recursive
+docbox settings set default-model paddleocr-mobile-en
+```
+
+### Benchmark the models on your own documents
+
+```sh
+docbox bench run invoices/ --models paddleocr-mobile-en,tesseract-eng,paddleocr-balanced
+docbox bench show <run-id>          # leaderboard
+docbox bench page <run-id> invoice.pdf 2   # every model's reading of one page, mistakes marked
+docbox bench report <run-id> -f md  # or csv, json
+```
+
+Each model reads every page in its own process, one model after another, so speed and
+peak memory are measured fairly. Accuracy needs reference text: put `invoice.gt.txt` (the
+whole document) or `invoice.p2.gt.txt` (one page) next to `invoice.pdf`, or list files and
+references in a manifest (`bench.json`):
+
+```json
+{"name": "Invoices", "items": [
+  {"file": "a.pdf", "gt_file": "a.txt"},
+  {"file": "b.png", "gt": "Total due $1,284.00"},
+  {"file": "c.pdf", "pages": [{"page": 2, "gt": "..."}]}
+]}
+```
+
+Without references, models are ranked by speed. Runs are saved in the data folder
+(`benchmarks/`).
+
+### AI agents (MCP)
+
+`docbox mcp` is an MCP server, so Claude Code, Claude Desktop, Cursor or VS Code can set up
+models, read files and run benchmarks for you. `docbox mcp config claude-code` (or
+`claude-desktop`, `cursor`, `vscode`) prints the setup. See [docs/agents.md](docs/agents.md).
+
+It uses the desktop app's models, settings and Recent files when the app is installed.
+Exit codes: `0` ok, `1` error, `2` usage, `3` needs Tesseract or Ollama, `4` blocked (cloud
+engine off).
 
 ## Releasing
 

@@ -177,6 +177,8 @@ class ReadSummary(BaseModel):
     created_at: float
     output_path: str | None = None
     error: str | None = None
+    # The process doing the read (the app's backend, the CLI or the MCP server share history).
+    pid: int | None = None
 
 
 class ReadPage(BaseModel):
