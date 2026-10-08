@@ -224,7 +224,17 @@ export function BenchmarkRun({
   const busy = run.state === "running" || run.state === "queued";
   const total = run.pages_total * run.models.length;
   const current = run.models.find((m) => m.model_id === run.current_model_id);
-  const problems = run.models.filter((m) => m.error && m.error !== "Cancelled");
+  const problems = run.models.flatMap((m) => {
+    if (m.error === "Cancelled") return [];
+    if (m.error) return [{ model: m, text: m.error.split("\n")[0] }];
+    // A model that failed every page (timeouts, a refused key) finishes without an error
+    // but has nothing to place on the leaderboard: say why it isn't there.
+    const row = run.summary?.leaderboard.find((r) => r.model_id === m.model_id);
+    if (m.state === "done" && row && row.pages_read === 0 && row.pages_failed > 0) {
+      return [{ model: m, text: `read none of its ${plural(row.pages_failed, "page")}` }];
+    }
+    return [];
+  });
 
   // A download works in a browser; the desktop webview can't save one, so the app shows
   // the saved report on this computer instead.
@@ -329,9 +339,9 @@ export function BenchmarkRun({
         {problems.length > 0 && (
           <Notice tone="warning">
             <ul className="flex flex-col gap-0.5">
-              {problems.map((m) => (
-                <li key={m.model_id}>
-                  <span className="font-medium">{m.name}</span>: {m.error?.split("\n")[0]}
+              {problems.map(({ model, text }) => (
+                <li key={model.model_id}>
+                  <span className="font-medium">{model.name}</span>: {text}
                 </li>
               ))}
             </ul>
