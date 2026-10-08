@@ -8,6 +8,7 @@ import sys
 from typing import TextIO
 
 from docbox import __version__, plugins
+from docbox.backend.core import tls
 from docbox.cli.commands import bench, device, engines, mcp, models, read, settings
 from docbox.cli.output import EXIT_ERROR, EXIT_USAGE, Output, exit_code
 from docbox.service.errors import ServiceError
@@ -59,6 +60,7 @@ def main(argv: list[str] | None = None, *, private_stdout: bool = False) -> int:
     as_json = bool(getattr(args, "json", False))
     out = Output(as_json, reserve_stdout() if as_json and private_stdout else None)
     try:
+        tls.use_system_certificates()
         plugins.load()
         return args.func(args, out) or 0
     except ServiceError as exc:

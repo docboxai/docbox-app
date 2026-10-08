@@ -2,7 +2,11 @@
 
     python -m docbox.benchmark.worker  < job.json
 
-The job on stdin: {"model_id": "...", "files": [{"id": "...", "path": "..."}]}.
+The job on stdin: {"model_id": "...", "files": [{"id": "...", "path": "..."}]}, either
+as its first line or as the whole of stdin. The runner sends it as one line, adds
+"lifeline": true and keeps stdin open: the worker exits as soon as stdin closes, so it
+never outlives the process that started it (an app that was closed or crashed, a killed
+CLI). Without "lifeline", stdin may end right after the job, as with `< job.json`.
 Events on stdout, one JSON object per line:
 
     {"event": "loaded", "seconds": 1.9, "in_process": true}  false: the model runs in
@@ -26,10 +30,12 @@ registered outside the built-in catalog can run here too.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import mimetypes
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import TextIO
@@ -42,6 +48,25 @@ def _protocol_stream() -> TextIO:
     return out
 
 
+def _read_job() -> dict:
+    first = sys.stdin.readline()
+    try:
+        return json.loads(first)
+    except ValueError:
+        # Not one line: a job written out by hand, which ends where stdin does.
+        return json.loads(first + sys.stdin.read())
+
+
+def _exit_when_stdin_closes() -> None:
+    def watch() -> None:
+        with contextlib.suppress(OSError, ValueError):
+            sys.stdin.read()
+        # Whoever started this worker is gone; nobody will read its pages.
+        os._exit(1)
+
+    threading.Thread(target=watch, name="docbox-worker-lifeline", daemon=True).start()
+
+
 def main() -> int:
     proto = _protocol_stream()
 
@@ -49,9 +74,13 @@ def main() -> int:
         proto.write(json.dumps({"event": event, **fields}, ensure_ascii=False) + "\n")
         proto.flush()
 
-    job = json.loads(sys.stdin.read())
+    job = _read_job()
+    if job.get("lifeline"):
+        _exit_when_stdin_closes()
     from docbox import plugins
+    from docbox.backend.core import tls
 
+    tls.use_system_certificates()
     plugins.load()
 
     from docbox.backend.core.pages import iter_pages

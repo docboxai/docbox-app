@@ -43,6 +43,7 @@ def test_download_status_unknown_job_is_404(client: TestClient) -> None:
     assert resp.status_code == 404
 
 
+@pytest.mark.real_data_dir
 def test_download_already_downloaded_model_reaches_done(client: TestClient) -> None:
     # In this dev environment the model was already fetched during manual testing, so
     # the engine's short-circuit path (`is_downloaded()` -> immediate "done") keeps this

@@ -22,8 +22,28 @@ def _isolated_settings_file(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(config_store, "_settings_path", lambda: tmp_path / "settings.json")
 
 
+# Opts a test into the developer's real DocBox data folder (models downloaded by hand).
+REAL_DATA_ENV = "DOCBOX_TEST_REAL_DATA"
+
+
+@pytest.fixture(autouse=True)
+def _isolated_data_dir(request, tmp_path: Path, monkeypatch) -> None:
+    """Every test gets its own data folder. Without DOCBOX_DATA_DIR, get_data_dir() is the
+    installed app's folder or platformdirs': the developer's real models, read history,
+    locks and benchmarks. Tests marked `real_data_dir` use models already downloaded there,
+    so they only run when asked to (DOCBOX_TEST_REAL_DATA=1)."""
+    if request.node.get_closest_marker("real_data_dir"):
+        if os.environ.get(REAL_DATA_ENV) != "1":
+            pytest.skip(f"reads models in your real DocBox data folder; set {REAL_DATA_ENV}=1 "
+                        "to run it")
+        return
+    monkeypatch.setenv("DOCBOX_DATA_DIR", str(tmp_path / "data"))
+
+
 @pytest.fixture()
 def data_dir(tmp_path: Path, monkeypatch) -> Path:
+    """This test's data folder (what DOCBOX_DATA_DIR points at), with the output folder
+    beside it."""
     d = tmp_path / "data"
     monkeypatch.setenv("DOCBOX_DATA_DIR", str(d))
     monkeypatch.setattr(config_store, "get_output_dir", lambda: tmp_path / "out")

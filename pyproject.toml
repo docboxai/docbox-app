@@ -21,7 +21,8 @@ dependencies = [
     "packaging>=23",
     "filelock>=3.15",
     "rapidfuzz>=3.9",
-    "mcp>=2.3",
+    # HTTPS against the OS trust store (core/tls.py), for networks with their own CA.
+    "truststore>=0.10",
 ]
 
 [project.scripts]
@@ -33,9 +34,14 @@ paddle = ["paddleocr>=2.9", "paddlepaddle>=2.6"]
 # index (sources only apply to direct dependencies); PyPI's Linux torch wheel bundles CUDA
 # and is several times larger.
 easyocr = ["easyocr>=1.7", "torch>=2.2", "torchvision>=0.17", "opencv-contrib-python"]
+# The MCP server for AI agents (`docbox mcp`): `uv tool install "docbox[agents] @ git+..."`.
+# Not an engine, and not in the desktop app's runtime, which never runs it.
+agents = ["mcp>=2.3"]
 
 [dependency-groups]
 dev = [
+    # The MCP server's tests (and `uv run docbox mcp` from a checkout).
+    "mcp>=2.3",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "httpx>=0.27",
@@ -75,6 +81,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "real_data_dir: reads models downloaded into the developer's real DocBox data folder; runs only with DOCBOX_TEST_REAL_DATA=1 (tests/conftest.py)",
+]
 
 [tool.ruff]
 line-length = 100

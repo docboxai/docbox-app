@@ -13,8 +13,9 @@ Three-part architecture, distributed as installers via GitHub Releases:
 - **Frontend**: Tauri (Rust) native shell (`src-tauri/`) hosting a React + TypeScript +
   Tailwind CSS UI (`frontend/`).
 - **Backend**: a local FastAPI + uvicorn server (`src/docbox/backend/`), spawned by the
-  Tauri shell as a child process (a venv's `python -m docbox.backend.main`) and killed
-  with its whole process tree on exit. The webview talks to it over
+  Tauri shell as a child process (a venv's `python -m docbox.backend.main`) and stopped
+  with its whole process tree on exit; it also exits by itself if the shell dies first
+  (see "Child processes never outlive the app"). The webview talks to it over
   `http://127.0.0.1:<port>`; the frontend polls the `backend_status` Tauri command until
   it's up, then gets the URL from `backend_base_url` (`src-tauri/src/main.rs`).
 - **Models**: registered against a `ModelSpec`/`OCREngine` abstraction
@@ -48,7 +49,8 @@ plain `npm run dev`/`npm run build`). Run from `src-tauri/`, it finds no `packag
 falls back to the repository root, where those hooks fail. The release workflow runs
 `cargo tauri build` from the root too. Dev builds run the repo's `.venv/…/python`, so `uv sync`
 must have been run first. A plain `uv sync` is exact: it uninstalls extras you didn't
-pass, so always pass the extras you need.
+pass, so always pass the extras you need. Quit an installed DocBox first: it has the same
+identifier, so the single-instance check hands the dev build's launch to it.
 
 ### Build an installer locally
 
@@ -85,6 +87,7 @@ alongside it. Same-origin, so the backend's CORS allowlist doesn't apply there.
 ### CLI (`docbox`)
 
 ```sh
+uv tool install "docbox[agents] @ git+https://github.com/docboxai/docbox-app"   # standalone, with `docbox mcp`
 uv run docbox --help
 uv run docbox models list --json
 uv run docbox read invoice.pdf --model paddleocr-mobile-en --format md
@@ -100,11 +103,17 @@ uv run ruff check src/docbox                             # lint (line-length 100
 ```
 
 Backend routes are tested directly via `fastapi.testclient.TestClient(create_app())` —
-no subprocess needed. Tests that depend on environment state (a model already
-downloaded, `tesseract` on PATH, `easyocr` importable, Ollama running, an NVIDIA key
-set) use `pytest.skip`/fixtures rather than mocking those dependencies away — see
-`tests/backend/test_models_routes.py::test_download_already_downloaded_model_reaches_done`
-and `tests/backend/test_models_catalog.py` for the pattern.
+no subprocess needed. Tests that depend on environment state (`tesseract` on PATH,
+`easyocr` importable, Ollama running, an NVIDIA key set) use `pytest.skip`/fixtures rather
+than mocking those dependencies away — see `tests/backend/test_models_catalog.py` for the
+pattern.
+
+Every test runs with its own temp `DOCBOX_DATA_DIR` (autouse `_isolated_data_dir` in
+`tests/conftest.py`), so the suite never touches the real data folder (the installed
+app's, or platformdirs'). Tests that need a model you downloaded by hand are marked
+`@pytest.mark.real_data_dir` and use your real folder only when you ask:
+`DOCBOX_TEST_REAL_DATA=1 uv run pytest` (e.g.
+`tests/backend/test_models_routes.py::test_download_already_downloaded_model_reaches_done`).
 
 There is no frontend test suite; `npm run build` / `tsc --noEmit` is the verification
 step for frontend changes.
@@ -185,6 +194,12 @@ installed: its dir is read-only under Program Files), `DOCBOX_RUNTIME_MODE=manag
 `DOCBOX_UV`, `DOCBOX_DATA_DIR`, and the same `UV_*` env vars. Logs go to
 `<data>/logs/{setup,backend}.log`.
 
+HTTPS trusts the operating system's certificates, so downloads work behind company proxies
+that inspect HTTPS with their own CA: every uv the app runs gets `UV_SYSTEM_CERTS=1`
+(`main.rs::uv_env`), and each Python entry point (`create_app()`, the CLI's `main()`, the
+benchmark worker) calls `core/tls.py::use_system_certificates()`, which injects
+`truststore` into `ssl`, urllib3 and requests.
+
 Heavy engine packages are pyproject **extras** (`paddle`, `easyocr`; torch pinned to the
 CPU index via `[tool.uv.sources]`, which only applies to *direct* deps, hence torch and
 torchvision listed explicitly). `core/runtime.py` installs one on demand with
@@ -222,6 +237,34 @@ Child processes (the bootstrap `uv`, the backend) go through `outside_appimage` 
 `main.rs`: the AppImage launcher's PYTHONHOME/PYTHONPATH/LD_LIBRARY_PATH point into its
 mount and would break the managed Python.
 
+### Child processes never outlive the app
+
+- **Port:** the shell starts the backend with `--port 0`: the backend binds a free port
+  itself, prints `{"docbox_backend": {"port": N}}` as its first stdout line and then points
+  fd 1 at stderr (`backend.log`). `main.rs::port_report` waits for that line (anything else
+  on stdout goes to the log), then polls `/api/health`; if either doesn't come, boot fails
+  with the end of `backend.log`. Run by hand, the backend still defaults to port 8756, which
+  the Vite dev proxy and Docker use.
+- **Lifeline:** the shell starts the backend with `--exit-on-stdin-close` and a piped stdin
+  it never writes to (`Backend::lifeline`). When that pipe closes (the shell drops it on
+  exit, or the OS closes it because the shell crashed or was force-quit), the backend stops
+  its own children (`stop_children`: engine installs, benchmark workers), asks uvicorn to
+  shut down, and hard-exits after a few seconds if that hangs. A backend run by hand or in
+  Docker has no flag and ignores stdin.
+- **Process groups:** on Unix the backend and the bootstrap `uv` each lead their own process
+  group, so `stop_child`/`kill_tree` SIGTERM the whole group and SIGKILL what's left after a
+  grace period. Windows uses `taskkill /T /F`, which also reaches past the venv's
+  `python.exe` launcher.
+- **Benchmark workers:** they get the same kind of lifeline from whoever runs the benchmark
+  (the app's backend, the CLI, the MCP server). See Benchmarks below.
+- **One instance:** `tauri-plugin-single-instance`, registered first, makes a second launch
+  show and focus the running window instead of starting a second shell, backend and
+  first-run `uv sync` on the same data dir. The close handler ends the process with
+  `std::process::exit`, which skips `RunEvent::Exit`, so it calls the plugin's `destroy`
+  itself. The updater's relaunch goes through `request_restart`, which does fire
+  `RunEvent::Exit`. Linux needs a D-Bus session bus for the check (without one the app runs
+  unchecked).
+
 ### The service layer: one implementation behind the app, the CLI and MCP
 
 `src/docbox/service/` holds the operations (models, engines, device, settings, reading
@@ -246,7 +289,7 @@ pip install with no project to sync): extras go in with `uv pip install` pinned 
 `core/pins/constraints.txt`, exported from `uv.lock` by `scripts/export_pins.sh`; rerun it
 whenever `uv.lock` changes (`tests/service/test_shared_state.py` fails when it's stale).
 
-Tests: `tests/conftest.py` provides `data_dir` (temp `DOCBOX_DATA_DIR`) and `fake_model` /
+Tests: `tests/conftest.py` gives every test a temp `DOCBOX_DATA_DIR` (`data_dir` returns it) and `fake_model` /
 `installed_fake` (a registered `test-fake` model that reads instantly), and the CLI is run
 in-process with `docbox.cli.main.main(argv)`.
 
@@ -255,8 +298,9 @@ in-process with `docbox.cli.main.main(argv)`.
 `runner.create()` checks the dataset (`dataset.py`: files/folders with `.gt.txt` /
 `.pN.gt.txt` sidecars, or a `.json`/`.jsonl` manifest) and models up front and saves a
 queued run; `runner.execute()` then runs each model **in its own worker process**
-(`python -m docbox.benchmark.worker`, JSON job on stdin, one JSON event per line on a
-private copy of stdout; libraries' own prints are moved to stderr) — for honest peak memory
+(`python -m docbox.benchmark.worker`; the JSON job is one line on stdin, which the runner
+keeps open as a lifeline, so a worker exits when whoever started it is gone; one JSON
+event per line on a private copy of stdout; libraries' own prints are moved to stderr) — for honest peak memory
 (psutil, sampled by the parent), crash/hang isolation (per-page timeout) and so native libs
 never load in the backend. Runs live in `<data>/benchmarks/<run_id>/` (`store.py`); only the
 running process writes them, a `cancel` file stops them from any process, and a running run
@@ -269,7 +313,10 @@ Tests use fake engines in `tests/benchmark/bench_fakes.py`, loaded into workers 
 ### MCP server (`src/docbox/mcp_server.py`)
 
 `docbox mcp` serves an MCP server over stdio (official `mcp` SDK 2.x: `MCPServer`, not the
-1.x `FastMCP`). Tools are plain sync functions over `service/` (the SDK runs them on worker
+1.x `FastMCP`). The SDK is the `agents` extra (and in the `dev` group for tests), not a base
+dependency: the desktop app's managed runtime never runs the MCP server, so it doesn't
+download it. `cli/commands/mcp.py` imports `mcp_server` only when serving, and without the
+SDK `docbox mcp` fails with the install command; nothing else may import `mcp`. Tools are plain sync functions over `service/` (the SDK runs them on worker
 threads and diverts stray stdout writes, so a chatty OCR library can't corrupt the
 protocol); `ServiceError`s become `ToolError("<code>: <detail>")`. Long work returns an id
 to poll (`install_model` → `get_install_status`, `start_benchmark` → `get_benchmark`,

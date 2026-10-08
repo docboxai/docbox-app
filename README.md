@@ -319,8 +319,14 @@ Without references, models are ranked by speed. Runs are saved in the data folde
 ### AI agents (MCP)
 
 `docbox mcp` is an MCP server, so Claude Code, Claude Desktop, Cursor or VS Code can set up
-models, read files and run benchmarks for you. `docbox mcp config claude-code` (or
-`claude-desktop`, `cursor`, `vscode`) prints the setup. See [docs/agents.md](docs/agents.md).
+models, read files and run benchmarks for you. It needs the `agents` extra:
+
+```sh
+uv tool install "docbox[agents] @ git+https://github.com/docboxai/docbox-app"
+```
+
+`docbox mcp config claude-code` (or `claude-desktop`, `cursor`, `vscode`) prints the setup.
+See [docs/agents.md](docs/agents.md).
 
 It uses the desktop app's models, settings and Recent files when the app is installed.
 Exit codes: `0` ok, `1` error, `2` usage, `3` needs Tesseract or Ollama, `4` blocked (cloud

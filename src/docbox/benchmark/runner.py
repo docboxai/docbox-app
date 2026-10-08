@@ -11,6 +11,7 @@ both slower and the speed and memory numbers meaningless.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import mimetypes
 import os
@@ -260,10 +261,13 @@ class _Worker:
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             assert proc.stdin is not None and proc.stdout is not None
+            # One line, and stdin stays open: the worker exits when it closes, so it never
+            # outlives this process (see worker.py).
             job = {"model_id": model.model_id,
-                   "files": [{"id": f.id, "path": f.path} for f in run.files]}
-            proc.stdin.write(json.dumps(job))
-            proc.stdin.close()
+                   "files": [{"id": f.id, "path": f.path} for f in run.files],
+                   "lifeline": True}
+            proc.stdin.write(json.dumps(job) + "\n")
+            proc.stdin.flush()
 
             events: queue.Queue[str | None] = queue.Queue()
             threading.Thread(target=_pump, args=(proc.stdout, events), daemon=True).start()
@@ -275,6 +279,8 @@ class _Worker:
                 if proc.poll() is None:
                     _kill_tree(proc.pid)
                 proc.wait()
+                with contextlib.suppress(OSError):
+                    proc.stdin.close()
                 sampler.join(2)
 
         if self.in_process:

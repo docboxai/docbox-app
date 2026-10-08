@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import json
 import os
+import socket
+import sys
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
+import psutil
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
@@ -23,9 +30,12 @@ from docbox.backend.api import (
     routes_reads,
     routes_settings,
 )
-from docbox.backend.core import history
+from docbox.backend.core import history, tls
 from docbox.backend.core.client_header import CLIENT_HEADER
 from docbox.backend.schemas import HealthStatus
+
+if TYPE_CHECKING:
+    import uvicorn
 
 # Tauri 2's webview origin: tauri://localhost on Linux/macOS, http://tauri.localhost on
 # Windows. Plus the Vite dev server for `npm run dev`.
@@ -82,6 +92,7 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app() -> FastAPI:
+    tls.use_system_certificates()
     app = FastAPI(title="DocBox Backend", version="0.1.0", lifespan=_lifespan)
 
     # Middleware added last runs first: Host check, then CORS, then the cross-site check.
@@ -129,16 +140,82 @@ def create_app() -> FastAPI:
 
 app = create_app()
 
+# After the shell is gone: how long a graceful shutdown may take before the process just
+# exits (a request stuck in a long OCR call would otherwise keep it waiting).
+_EXIT_GRACE_S = 5.0
+# How long the backend's children get to exit on terminate() before they're killed.
+_CHILD_GRACE_S = 3.0
+
+
+def stop_children() -> None:
+    """End every process this backend started and is still running (engine installs,
+    benchmark workers), so none of them outlives it."""
+    try:
+        children = psutil.Process().children(recursive=True)
+    except psutil.Error:
+        return
+    for child in children:
+        with contextlib.suppress(psutil.Error):
+            child.terminate()
+    _gone, alive = psutil.wait_procs(children, timeout=_CHILD_GRACE_S)
+    for child in alive:
+        with contextlib.suppress(psutil.Error):
+            child.kill()
+
+
+def _exit_when_stdin_closes(server: uvicorn.Server) -> None:
+    """The desktop shell keeps this process's stdin open and never writes to it, so EOF
+    means the shell is gone: closed, crashed or force-quit. Stop then, instead of running
+    on as an orphan that holds the CPU, the port and the model files."""
+
+    def watch() -> None:
+        with contextlib.suppress(OSError, ValueError):
+            sys.stdin.buffer.read()
+        stop_children()
+        server.should_exit = True
+        hard_exit = threading.Timer(_EXIT_GRACE_S, os._exit, args=(0,))
+        hard_exit.daemon = True
+        hard_exit.start()
+
+    threading.Thread(target=watch, name="docbox-lifeline", daemon=True).start()
+
+
+def _report_port(sock: socket.socket) -> None:
+    """Tell whoever started this process which port the OS picked: one JSON line on
+    stdout. From then on fd 1 is stderr (the log), so libraries that print to stdout can't
+    fill a pipe that nobody reads any more."""
+    print(json.dumps({"docbox_backend": {"port": sock.getsockname()[1]}}), flush=True)
+    os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+
 
 def main() -> None:
     import uvicorn
 
     parser = argparse.ArgumentParser(description="Run the DocBox backend server")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8756)
+    parser.add_argument(
+        "--port", type=int, default=8756,
+        help="0: let the OS pick a free port and print it as a JSON line on stdout",
+    )
+    parser.add_argument(
+        "--exit-on-stdin-close", action="store_true",
+        help="shut down when stdin reaches EOF (the desktop app holds it open while it runs)",
+    )
     args = parser.parse_args()
 
-    uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, log_level="info"))
+    if args.exit_on_stdin_close:
+        _exit_when_stdin_closes(server)
+    if args.port != 0:
+        server.run()
+        return
+    # Bound here, before uvicorn starts, so the port is known and can't be taken between
+    # choosing it and listening on it.
+    family = socket.AF_INET6 if ":" in args.host else socket.AF_INET
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    sock.bind((args.host, 0))
+    _report_port(sock)
+    server.run(sockets=[sock])
 
 
 if __name__ == "__main__":
