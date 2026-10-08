@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+from typing import TextIO
 
 from docbox import __version__, plugins
 from docbox.cli.commands import bench, device, engines, mcp, models, read, settings
@@ -37,13 +39,25 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
+def reserve_stdout() -> TextIO:
+    """A private copy of stdout for the JSON result. OCR engines run in this process and
+    print to stdout themselves (Python prints and native writes alike): from here on fd 1
+    and sys.stdout go to stderr, so a script parsing `--json` output only ever sees JSON."""
+    sys.stdout.flush()
+    private = os.fdopen(os.dup(1), "w", encoding="utf-8")
+    os.dup2(2, 1)
+    sys.stdout = sys.stderr
+    return private
+
+
+def main(argv: list[str] | None = None, *, private_stdout: bool = False) -> int:
     parser = build_parser()
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:  # --help, --version, or a usage error
         return exc.code if isinstance(exc.code, int) else EXIT_USAGE
-    out = Output(as_json=bool(getattr(args, "json", False)))
+    as_json = bool(getattr(args, "json", False))
+    out = Output(as_json, reserve_stdout() if as_json and private_stdout else None)
     try:
         plugins.load()
         return args.func(args, out) or 0
@@ -62,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def run() -> None:
-    sys.exit(main())
+    sys.exit(main(private_stdout=True))
 
 
 __all__ = ["EXIT_USAGE", "build_parser", "main", "run"]

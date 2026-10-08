@@ -5,10 +5,13 @@ computer, and can be cleared per entry."""
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import uuid
 from pathlib import Path
+
+import psutil
 
 from docbox.backend.core.locks import data_lock
 from docbox.backend.core.paths import get_data_dir
@@ -83,6 +86,7 @@ def create(file_name: str, model_id: str, model_name: str, fmt: OutputFormat) ->
         output_format=fmt,
         state="queued",
         created_at=time.time(),
+        pid=os.getpid(),
     )
     with _lock:
         entries = [entry, *_load_index()]
@@ -145,13 +149,24 @@ def delete(read_id: str) -> bool:
     return True
 
 
+def _abandoned(entry: ReadSummary) -> bool:
+    """An unfinished read whose process is gone. History is shared with the CLI and the MCP
+    server, so another live process's read is still going; this process (just started) has
+    none of its own yet."""
+    if entry.state not in _UNFINISHED:
+        return False
+    if entry.pid is None or entry.pid == os.getpid():
+        return True
+    return not psutil.pid_exists(entry.pid)
+
+
 def mark_interrupted() -> None:
-    """Reads still queued or running when the backend last stopped will never finish."""
+    """Reads still queued or running when the process doing them stopped will never finish."""
     with _lock:
         entries = _load_index()
         changed = False
         for i, entry in enumerate(entries):
-            if entry.state in _UNFINISHED:
+            if _abandoned(entry):
                 entries[i] = entry.model_copy(
                     update={"state": "error", "error": "DocBox closed before this finished"}
                 )

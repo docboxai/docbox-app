@@ -134,6 +134,7 @@ export interface ReadSummary {
   created_at: number;
   output_path: string | null;
   error: string | null;
+  pid: number | null;
 }
 
 export interface ReadPage {

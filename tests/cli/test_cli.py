@@ -142,3 +142,24 @@ def test_engines_list(capsys, data_dir) -> None:
     code, body, _ = run_json(capsys, "engines", "list")
     assert code == 0
     assert {e["id"] for e in body["engines"]} == {"paddle", "easyocr"}
+
+
+def test_json_output_stays_clean_when_an_engine_prints(fakes, tmp_path) -> None:
+    """Engines run in the CLI's own process and print to stdout (fake-noisy does, like
+    PaddleOCR loading); `--json` output must still parse."""
+    import os
+    import subprocess
+    import sys
+
+    image = tmp_path / "page.png"
+    fakes.page_image(1).save(image)
+    proc = subprocess.run(
+        [sys.executable, "-m", "docbox.cli", "read", str(image), "-m", "fake-noisy",
+         "--out", str(tmp_path / "out"), "--json"],
+        capture_output=True, text=True, env=os.environ, timeout=120, check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    result = json.loads(proc.stdout)
+    assert "library chatter" not in proc.stdout
+    assert "library chatter" in proc.stderr
+    assert result

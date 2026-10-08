@@ -170,7 +170,7 @@ def _page(args, out: Output) -> int:
 
 def _report(args, out: Output) -> int:
     text = service.render_report(args.run_id, args.format)
-    sys.stdout.write(text if text.endswith("\n") else text + "\n")
+    out.stream.write(text if text.endswith("\n") else text + "\n")
     return 0
 
 

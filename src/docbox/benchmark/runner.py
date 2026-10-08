@@ -289,8 +289,16 @@ class _Worker:
         """Read events until the worker says done; returns how it ended."""
         loaded = False
         last = time.monotonic()
+        checked = last
         while True:
             timeout = self.page_timeout if loaded else self.load_timeout
+            # Checked on a clock, not only when the worker goes quiet: a fast model sends a
+            # page every few hundred ms and would otherwise never see the cancel.
+            if time.monotonic() - checked >= 0.5:
+                checked = time.monotonic()
+                if store.cancel_requested(self.run_.id):
+                    self.model.error = "Cancelled"
+                    return "cancelled"
             try:
                 line = events.get(timeout=0.5)
             except queue.Empty:

@@ -56,6 +56,8 @@ class FakeEngine:
             os._exit(3)
         if self.behaviour == "hang":
             time.sleep(3600)
+        if self.behaviour == "steady":  # pages arrive faster than the runner's 0.5 s poll
+            time.sleep(0.2)
         text = TEXTS.get(_page_no(image), "")
         if self.behaviour == "sloppy":
             text = _sloppy(text)
@@ -68,7 +70,7 @@ class FakeEngine:
         self._marker().unlink(missing_ok=True)
 
 
-BEHAVIOURS = ("good", "sloppy", "crash", "hang", "brokenload", "notinstalled", "noisy")
+BEHAVIOURS = ("good", "sloppy", "crash", "hang", "brokenload", "notinstalled", "noisy", "steady")
 
 
 def register() -> None:

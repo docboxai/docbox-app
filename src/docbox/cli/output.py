@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Callable, Sequence
-from typing import Any
+from typing import Any, TextIO
 
 from pydantic import BaseModel
 
@@ -37,14 +37,22 @@ def to_jsonable(value: Any) -> Any:
 
 
 class Output:
-    def __init__(self, as_json: bool) -> None:
+    def __init__(self, as_json: bool, stream: TextIO | None = None) -> None:
         self.json = as_json
+        # Where results go: stdout, or a private copy of it while engines run in this
+        # process (see main.reserve_stdout).
+        self._stream = stream
+
+    @property
+    def stream(self) -> TextIO:
+        return self._stream or sys.stdout
 
     def result(self, value: Any, human: Callable[[], None] | None = None) -> None:
         """The command's result: JSON on stdout, or `human()` prints it for people."""
         if self.json:
-            json.dump(to_jsonable(value), sys.stdout, indent=2, ensure_ascii=False)
-            sys.stdout.write("\n")
+            json.dump(to_jsonable(value), self.stream, indent=2, ensure_ascii=False)
+            self.stream.write("\n")
+            self.stream.flush()
         elif human is not None:
             human()
 

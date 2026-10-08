@@ -22,6 +22,7 @@ another source without touching the runner.
 
 from __future__ import annotations
 
+import glob
 import json
 import re
 from collections.abc import Iterable
@@ -71,7 +72,7 @@ def sidecar_references(doc: Path) -> tuple[str | None, dict[int, str]]:
     whole_path = doc.with_name(f"{doc.stem}.gt.txt")
     whole = _read_text(whole_path) if whole_path.is_file() else None
     pages: dict[int, str] = {}
-    for candidate in doc.parent.glob(f"{doc.stem}.p*.gt.txt"):
+    for candidate in doc.parent.glob(f"{glob.escape(doc.stem)}.p*.gt.txt"):
         m = _PAGE_SIDECAR.match(candidate.name)
         if m and m["stem"] == doc.stem:
             pages[int(m["page"])] = _read_text(candidate)
