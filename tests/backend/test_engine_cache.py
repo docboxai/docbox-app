@@ -52,16 +52,50 @@ def test_another_model_takes_the_place_of_the_last_one(two_models) -> None:
     assert stats_a.loads == 2 and stats_b.loads == 1
 
 
+def _wait_until_let_go() -> None:
+    deadline = time.monotonic() + 5
+    while engine_cache.loaded_model_ids() and time.monotonic() < deadline:
+        time.sleep(0.02)
+
+
 def test_an_idle_model_is_let_go(two_models, monkeypatch) -> None:
     (a, stats), _ = two_models
     monkeypatch.setenv("DOCBOX_ENGINE_IDLE_S", "0.05")
     read(a, png())
-    deadline = time.monotonic() + 5
-    while engine_cache.loaded_model_ids() and time.monotonic() < deadline:
-        time.sleep(0.02)
+    _wait_until_let_go()
     assert engine_cache.loaded_model_ids() == []
     read(a, png())
     assert stats.loads == 2
+
+
+def test_an_idle_model_is_let_go_whatever_the_clock_says(two_models, monkeypatch) -> None:
+    # The idle timer waits in real time. A clock that reads less than that (Windows' on
+    # CPython 3.12 ticks every 15.6 ms; this one runs at half speed) mustn't keep the
+    # model loaded.
+    (a, _), _ = two_models
+    monkeypatch.setenv("DOCBOX_ENGINE_IDLE_S", "0.05")
+    real, start = time.monotonic, time.monotonic()
+    monkeypatch.setattr(time, "monotonic", lambda: start + (real() - start) / 2)
+    read(a, png())
+    _wait_until_let_go()
+    assert engine_cache.loaded_model_ids() == []
+
+
+def test_an_idle_model_is_let_go_after_a_read_slow_to_finish(two_models, monkeypatch) -> None:
+    # The read that sets the idle timer can be held up past it (a busy computer). The
+    # timer mustn't find that read still holding the engine and give up for good.
+    (a, _), _ = two_models
+    monkeypatch.setenv("DOCBOX_ENGINE_IDLE_S", "0.05")
+    schedule = engine_cache._schedule_idle_unload
+
+    def schedule_then_stall(entry) -> None:
+        schedule(entry)
+        time.sleep(0.2)
+
+    monkeypatch.setattr(engine_cache, "_schedule_idle_unload", schedule_then_stall)
+    read(a, png())
+    _wait_until_let_go()
+    assert engine_cache.loaded_model_ids() == []
 
 
 def test_idle_unloading_can_be_turned_off(two_models, monkeypatch) -> None:
