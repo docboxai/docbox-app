@@ -11,9 +11,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from docbox.backend.core import engine_cache
-from docbox.backend.core.registry import registry
+from docbox.backend.core.registry import ModelSpec, registry
 from docbox.service import models as models_service
-from tests.backend.reading_fakes import png, read, register
+from tests.backend.reading_fakes import CountingEngine, Stats, png, read, register
 
 
 @pytest.fixture(autouse=True)
@@ -150,3 +150,29 @@ def test_single_page_request_for_a_removed_model_is_409(client: TestClient, two_
     resp = client.post("/api/ocr/run", files={"file": ("a.png", png(), "image/png")},
                        data={"model_id": "test-count-a"})
     assert resp.status_code == 409 and "not downloaded" in resp.json()["detail"]
+
+
+class _ElsewhereEngine(CountingEngine):
+    """Like Ollama's: the model lives in another program, so there's nothing to keep warm."""
+
+    runs_in_process = False
+
+
+def test_a_model_running_elsewhere_leaves_the_warm_one_loaded(two_models) -> None:
+    (a, stats_a), _ = two_models
+    stats = Stats()
+    elsewhere = ModelSpec(
+        id="test-elsewhere", name="Elsewhere", engine="fake", description="test double",
+        languages=["en"], approx_download_mb=1, approx_ram_mb=1, min_disk_mb=1,
+        engine_factory=lambda: _ElsewhereEngine(stats),
+    )
+    registry.register(elsewhere)
+    try:
+        read(a, png())
+        assert read(elsewhere, png()).state == "done"
+        read(a, png())
+        assert stats_a.loads == 1  # still warm after the other model's read
+        assert engine_cache.loaded_model_ids() == ["test-count-a"]
+        assert (stats.loads, stats.runs) == (1, 1)
+    finally:
+        registry._models.pop(elsewhere.id, None)

@@ -50,6 +50,9 @@ def _image_to_data_url(image: Image.Image) -> str:
 class NvidiaNimOcrEngine:
     """Runs OCR-style transcription through an NVIDIA-hosted vision-language model."""
 
+    # The model runs on NVIDIA's servers (see base.py).
+    runs_in_process = False
+
     def __init__(self, *, model_id: str, nim_model: str) -> None:
         self._model_id = model_id
         self._nim_model = nim_model
