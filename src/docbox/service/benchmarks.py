@@ -90,6 +90,15 @@ def render_report(run_id: str, fmt: ReportFormat = "md") -> str:
     raise Invalid(f"Unknown report format: {fmt}")
 
 
+def report_path(run_id: str) -> Path:
+    """The saved Markdown report: written when the benchmark ends, not while it runs."""
+    store.load(run_id)  # NotFound for an unknown run
+    path = store.run_dir(run_id) / "report.md"
+    if not path.is_file():
+        raise NotFound("This benchmark has no report yet: it's written when the run ends")
+    return path
+
+
 def cancel(run_id: str) -> BenchRun:
     run = store.load(run_id)
     if run.state not in ("queued", "running"):

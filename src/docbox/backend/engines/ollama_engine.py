@@ -113,6 +113,9 @@ def _image_to_b64(image: Image.Image) -> str:
 class OllamaOcrEngine:
     """Runs OCR-style transcription through a vision model already pulled in Ollama."""
 
+    # The model runs inside Ollama's own server, not in this process (see base.py).
+    runs_in_process = False
+
     def __init__(self, *, model_id: str, ollama_model: str) -> None:
         self._model_id = model_id
         self._ollama_model = ollama_model

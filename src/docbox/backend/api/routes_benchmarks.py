@@ -12,6 +12,7 @@ from typing import Literal
 from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 
 from docbox.backend.api.errors import http_errors
+from docbox.backend.core.opener import open_path
 from docbox.benchmark import store
 from docbox.benchmark.reference import ReferenceData, reference
 from docbox.benchmark.report import PageView
@@ -114,6 +115,16 @@ def get_report(run_id: str, format: Literal["md", "csv", "json"] = "md") -> Resp
     media = {"md": "text/markdown", "csv": "text/csv", "json": "application/json"}[format]
     return Response(content=text, media_type=f"{media}; charset=utf-8", headers={
         "Content-Disposition": f'attachment; filename="docbox-benchmark-{run_id}.{format}"'})
+
+
+@router.post("/{run_id}/report/open", status_code=204)
+def open_report(run_id: str, target: Literal["file", "folder"] = "file") -> Response:
+    """Show the saved report (or the run's folder) on this computer. Takes the run id,
+    never a path."""
+    with http_errors():
+        path = service.report_path(run_id)
+    open_path(path if target == "file" else path.parent)
+    return Response(status_code=204)
 
 
 @router.post("/{run_id}/cancel", response_model=BenchRun)

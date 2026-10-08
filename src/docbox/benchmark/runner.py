@@ -27,6 +27,7 @@ from pathlib import Path
 import psutil
 
 import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
+from docbox.backend import platforms
 from docbox.backend.core.pages import PageError, count_pages
 from docbox.backend.core.paths import get_data_dir
 from docbox.benchmark import dataset as datasets
@@ -239,6 +240,8 @@ class _Worker:
         # file id -> pages still to come from this model
         self.remaining = {f.id: f.pages for f in run.files}
         self.peak_bytes = 0
+        # False when the worker reports that the model runs in another program's process.
+        self.in_process = True
 
     def run(self) -> None:
         model, run = self.model, self.run_
@@ -274,7 +277,12 @@ class _Worker:
                 proc.wait()
                 sampler.join(2)
 
-        model.peak_memory_mb = round(self.peak_bytes / 2**20, 1) if self.peak_bytes else None
+        if self.in_process:
+            model.peak_memory_mb = round(self.peak_bytes / 2**20, 1) if self.peak_bytes else None
+        else:
+            # The worker only sends requests: its own memory says nothing about the model's.
+            model.peak_memory_mb = None
+            model.memory_note = _memory_note(model.model_id)
         if outcome == "crashed":
             tail = log_path.read_text(encoding="utf-8", errors="replace").strip()[-600:]
             model.error = f"The model stopped unexpectedly (exit code {proc.returncode})." + (
@@ -322,6 +330,7 @@ class _Worker:
             if kind == "loaded":
                 loaded = True
                 self.model.load_seconds = event.get("seconds")
+                self.in_process = event.get("in_process", True)
             elif kind == "page":
                 self._page(event)
             elif kind == "file_error":
@@ -372,6 +381,12 @@ class _Worker:
             except psutil.Error:
                 pass
             time.sleep(_MEMORY_SAMPLE_S)
+
+
+def _memory_note(model_id: str) -> str:
+    where = {"ollama": "inside Ollama", "nvidia-nim": "on NVIDIA's servers"}.get(
+        platforms.describe(model_id)[0], "in another process")
+    return f"Runs {where}, so its memory isn't measured here"
 
 
 def _pump(stream, events: queue.Queue[str | None]) -> None:
