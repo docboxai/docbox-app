@@ -136,3 +136,16 @@ def test_benchmarks_read_every_page_with_the_model(fakes, tmp_path) -> None:
     pages = [e for e in map(json.loads, proc.stdout.splitlines()) if e["event"] == "page"]
     # The fake engine reads a white page as no text; the PDF's own text would be INVOICE.
     assert len(pages) == 1 and pages[0]["text"] == ""
+
+
+def test_a_text_layer_must_read_as_text() -> None:
+    from docbox.backend.core.pages import readable_text
+
+    assert readable_text("Invoice INV-0312: total due $1,284.00")
+    assert not readable_text("Page 3")  # too little to replace reading the page
+    # A font embedded without a character map extracts as private-use or replacement
+    # characters: no better than no text, so the page is OCRed.
+    assert not readable_text(" " * 8)
+    assert not readable_text("�" * 30)
+    # A stray symbol from such a font among real text is fine.
+    assert readable_text("Invoice INV-0312: total due $1,284.00 ")
