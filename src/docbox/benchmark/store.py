@@ -22,6 +22,7 @@ from typing import Literal
 import psutil
 from pydantic import BaseModel
 
+from docbox.backend.core import atomic
 from docbox.backend.core.paths import get_data_dir
 from docbox.backend.schemas import OcrLine
 from docbox.service.errors import NotFound
@@ -132,9 +133,7 @@ def run_dir(run_id: str) -> Path:
 def save(run: BenchRun) -> None:
     d = run_dir(run.id)
     d.mkdir(parents=True, exist_ok=True)
-    tmp = d / "run.json.tmp"
-    tmp.write_text(run.model_dump_json(indent=2), encoding="utf-8")
-    tmp.replace(d / "run.json")
+    atomic.write_text(d / "run.json", run.model_dump_json(indent=2))
 
 
 def _alive(pid: int | None) -> bool:
@@ -149,7 +148,7 @@ def _alive(pid: int | None) -> bool:
 def load(run_id: str) -> BenchRun:
     path = run_dir(run_id) / "run.json"
     try:
-        run = BenchRun.model_validate_json(path.read_text(encoding="utf-8"))
+        run = BenchRun.model_validate_json(atomic.read_text(path))
     except (OSError, ValueError):
         raise NotFound(f"Unknown benchmark: {run_id}") from None
     if run.state in _UNFINISHED and run.pid is not None and not _alive(run.pid):

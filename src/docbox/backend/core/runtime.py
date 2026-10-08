@@ -36,6 +36,7 @@ from pathlib import Path
 
 from packaging.requirements import Requirement
 
+from docbox.backend.core import atomic
 from docbox.backend.core.paths import get_runtime_dir
 from docbox.backend.engines.base import ProgressCallback
 
@@ -130,7 +131,7 @@ def read_state() -> dict:
     if not _managed():  # see _write_state
         return {}
     try:
-        return json.loads(_state_path().read_text(encoding="utf-8"))
+        return json.loads(atomic.read_text(_state_path()))
     except (OSError, ValueError):
         return {}
 
@@ -144,9 +145,7 @@ def _write_state(**updates) -> None:
     state = read_state()
     state.update(updates)
     path = _state_path()
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    atomic.write_text(path, json.dumps(state, indent=2))
 
 
 def sync_command(extras: Iterable[str], *, inexact: bool) -> list[str]:

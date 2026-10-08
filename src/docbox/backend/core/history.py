@@ -13,6 +13,7 @@ from pathlib import Path
 
 import psutil
 
+from docbox.backend.core import atomic
 from docbox.backend.core.locks import data_lock
 from docbox.backend.core.paths import get_data_dir
 from docbox.backend.schemas import OutputFormat, ReadDetail, ReadPage, ReadSummary
@@ -65,16 +66,14 @@ def _detail_path(read_id: str) -> Path:
 
 def _load_index() -> list[ReadSummary]:
     try:
-        raw = json.loads(_index_path().read_text(encoding="utf-8"))
+        raw = json.loads(atomic.read_text(_index_path()))
         return [ReadSummary.model_validate(item) for item in raw]
     except (OSError, ValueError):
         return []
 
 
 def _save_index(entries: list[ReadSummary]) -> None:
-    tmp = _index_path().with_suffix(".tmp")
-    tmp.write_text(json.dumps([e.model_dump() for e in entries]), encoding="utf-8")
-    tmp.replace(_index_path())
+    atomic.write_text(_index_path(), json.dumps([e.model_dump() for e in entries]))
 
 
 def create(file_name: str, model_id: str, model_name: str, fmt: OutputFormat) -> ReadSummary:
