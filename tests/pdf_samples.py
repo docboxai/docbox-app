@@ -32,7 +32,12 @@ def _escape(text: str) -> str:
     return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
 
 
-def make_pdf(pages: list[Page]) -> bytes:
+def make_pdf(pages: list[Page], *, size: tuple[int, int] = (PAGE_W, PAGE_H),
+             box_on_tree: bool = False) -> bytes:
+    """`box_on_tree` sets the page size once, on the page tree, for every page to inherit
+    (as many PDF producers write it) instead of on each page."""
+    width, height = size
+    box = f"/MediaBox [0 0 {width} {height}]"
     b = _Builder()
     catalog = b.reserve()
     pages_obj = b.reserve()
@@ -55,22 +60,22 @@ def make_pdf(pages: list[Page]) -> bytes:
                     f"/Resources << /XObject << /Im0 {image} 0 R >> >>",
                     b"q 1 0 0 1 0 0 cm /Im0 Do Q"))
                 xobjects["Fm0"] = form
-                ops.append(f"q {PAGE_W} 0 0 {PAGE_H} 0 0 cm /Fm0 Do Q")
+                ops.append(f"q {width} 0 0 {height} 0 0 cm /Fm0 Do Q")
             else:
                 xobjects["Im0"] = image
-                ops.append(f"q {PAGE_W} 0 0 {PAGE_H} 0 0 cm /Im0 Do Q")
+                ops.append(f"q {width} 0 0 {height} 0 0 cm /Im0 Do Q")
         for i, line in enumerate(page.lines):
             ops.append(f"BT /F1 {FONT_SIZE} Tf {TEXT_X} {TEXT_TOP - LINE_STEP * i} Td "
                        f"({_escape(line)}) Tj ET")
         contents = b.add(b.stream("/Filter /FlateDecode", zlib.compress("\n".join(ops).encode())))
         xobj = " ".join(f"/{name} {num} 0 R" for name, num in xobjects.items())
         kids.append(b.add(
-            f"<< /Type /Page /Parent {pages_obj} 0 R /MediaBox [0 0 {PAGE_W} {PAGE_H}] "
+            f"<< /Type /Page /Parent {pages_obj} 0 R {'' if box_on_tree else box} "
             f"/Rotate {page.rotate} "
             f"/Resources << /Font << /F1 {font} 0 R >> /XObject << {xobj} >> >> "
             f"/Contents {contents} 0 R >>".encode()))
     b.set(pages_obj, (f"<< /Type /Pages /Kids [{' '.join(f'{k} 0 R' for k in kids)}] "
-                      f"/Count {len(kids)} >>").encode())
+                      f"/Count {len(kids)} {box if box_on_tree else ''} >>").encode())
     b.set(catalog, f"<< /Type /Catalog /Pages {pages_obj} 0 R >>".encode())
     return b.render(catalog)
 
