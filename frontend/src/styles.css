@@ -23,6 +23,12 @@
   --color-success: #17c964;
   --color-warning: #f5a524;
   --color-danger: #ff383c;
+  /* Chart series (benchmark graph): validated as a set on the surface, all pairs, for
+     colourblind separation (dataviz validate_palette.js); never more than three. */
+  --color-series-1: #3987e5; /* PaddleOCR */
+  --color-series-2: #d95926; /* Tesseract */
+  --color-series-3: #199e70; /* Ollama vision models */
+  --color-series-other: #898781;
   --font-sans: "DM Sans Variable", "Segoe UI", system-ui, sans-serif;
   --font-heading: "Host Grotesk Variable", "DM Sans Variable", system-ui, sans-serif;
 }
@@ -69,4 +75,15 @@
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* Page content eases in when switching views (the header stays put). */
+@keyframes view-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.view-enter {
+  animation: view-enter 180ms ease-out;
 }

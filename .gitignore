@@ -4,6 +4,8 @@ __pycache__/
 *.pyc
 src/docbox.egg-info/
 src/docbox.dist-info/
+build/
+dist/
 .pytest_cache/
 .ruff_cache/
 

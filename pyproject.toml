@@ -19,7 +19,13 @@ dependencies = [
     "pytesseract>=0.3.13",
     "requests>=2.31",
     "packaging>=23",
+    "filelock>=3.15",
+    "rapidfuzz>=3.9",
+    "mcp>=2.3",
 ]
+
+[project.scripts]
+docbox = "docbox.cli.main:run"
 
 [project.optional-dependencies]
 paddle = ["paddleocr>=2.9", "paddlepaddle>=2.6"]
@@ -59,6 +65,12 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# Engine package pins for standalone installs (scripts/export_pins.sh).
+"docbox.backend.core" = ["pins/*.txt"]
+# Published OCRBench scores for the benchmark graph.
+"docbox.benchmark" = ["ocrbench.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

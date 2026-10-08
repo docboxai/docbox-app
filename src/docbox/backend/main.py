@@ -13,6 +13,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 
 from docbox.backend.api import (
+    routes_benchmarks,
     routes_device,
     routes_engines,
     routes_models,
@@ -118,6 +119,7 @@ def create_app() -> FastAPI:
     app.include_router(routes_engines.router)
     app.include_router(routes_reads.router)
     app.include_router(routes_settings.router)
+    app.include_router(routes_benchmarks.router)
 
     # Importing the catalog registers the concrete ModelSpec entries as a side effect.
     from docbox.backend import models_catalog  # noqa: F401

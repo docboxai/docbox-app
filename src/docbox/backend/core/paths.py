@@ -23,11 +23,29 @@ _APP_AUTHOR = "docbox"
 MACOS_BIN_DIRS = (Path("/opt/homebrew/bin"), Path("/usr/local/bin"))
 
 
+# The desktop app's bundle identifier (tauri.conf.json); Tauri names its per-user data
+# folder after it and passes that folder to the backend as DOCBOX_DATA_DIR.
+APP_IDENTIFIER = "io.github.docboxai.docbox"
+
+
+def desktop_app_data_dir() -> Path:
+    """Where the installed desktop app keeps its data: Tauri's app_local_data_dir, which
+    is %LOCALAPPDATA%\\<id> on Windows, ~/Library/Application Support/<id> on macOS and
+    $XDG_DATA_HOME/<id> on Linux."""
+    return Path(platformdirs.user_data_dir(appname=APP_IDENTIFIER, appauthor=False))
+
+
 def get_data_dir() -> Path:
+    """DOCBOX_DATA_DIR, else the desktop app's folder when the app has been run here (so the
+    `docbox` CLI and MCP server share its models, history and benchmarks), else
+    platformdirs' own per-OS data dir."""
     override = os.environ.get("DOCBOX_DATA_DIR")
-    d = Path(override) if override else Path(
-        platformdirs.user_data_dir(appname=_APP_NAME, appauthor=_APP_AUTHOR)
-    )
+    if override:
+        d = Path(override)
+    elif desktop_app_data_dir().is_dir():
+        d = desktop_app_data_dir()
+    else:
+        d = Path(platformdirs.user_data_dir(appname=_APP_NAME, appauthor=_APP_AUTHOR))
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -42,8 +60,13 @@ def _migrate_legacy_models_dir(new: Path) -> None:
 def get_models_dir() -> Path:
     d = get_data_dir() / "models"
     # Only the default location inherits the old cache dir; an explicit DOCBOX_DATA_DIR
-    # (installed app, Docker, tests) is a different install and must not swallow it.
-    if not d.exists() and not os.environ.get("DOCBOX_DATA_DIR"):
+    # (installed app, Docker, tests) or the app's own folder is a different install and
+    # must not swallow it.
+    if (
+        not d.exists()
+        and not os.environ.get("DOCBOX_DATA_DIR")
+        and d.parent != desktop_app_data_dir()
+    ):
         _migrate_legacy_models_dir(d)
     d.mkdir(parents=True, exist_ok=True)
     return d

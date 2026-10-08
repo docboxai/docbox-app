@@ -5,11 +5,16 @@ computer, and can be cleared per entry."""
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import uuid
 from pathlib import Path
 
+import psutil
+
+from docbox.backend.core import atomic
+from docbox.backend.core.locks import data_lock
 from docbox.backend.core.paths import get_data_dir
 from docbox.backend.schemas import OutputFormat, ReadDetail, ReadPage, ReadSummary
 
@@ -17,7 +22,29 @@ from docbox.backend.schemas import OutputFormat, ReadDetail, ReadPage, ReadSumma
 _MAX_ENTRIES = 200
 _UNFINISHED = ("queued", "reading")
 
-_lock = threading.Lock()
+_thread_lock = threading.Lock()
+
+
+class _Lock:
+    """This process's threads, then other DocBox processes (the CLI, the MCP server)."""
+
+    def __enter__(self) -> None:
+        _thread_lock.acquire()
+        try:
+            self._file = data_lock("history")
+            self._file.acquire()
+        except BaseException:
+            _thread_lock.release()
+            raise
+
+    def __exit__(self, *exc) -> None:
+        try:
+            self._file.release()
+        finally:
+            _thread_lock.release()
+
+
+_lock = _Lock()
 
 
 def _dir() -> Path:
@@ -39,16 +66,14 @@ def _detail_path(read_id: str) -> Path:
 
 def _load_index() -> list[ReadSummary]:
     try:
-        raw = json.loads(_index_path().read_text(encoding="utf-8"))
+        raw = json.loads(atomic.read_text(_index_path()))
         return [ReadSummary.model_validate(item) for item in raw]
     except (OSError, ValueError):
         return []
 
 
 def _save_index(entries: list[ReadSummary]) -> None:
-    tmp = _index_path().with_suffix(".tmp")
-    tmp.write_text(json.dumps([e.model_dump() for e in entries]), encoding="utf-8")
-    tmp.replace(_index_path())
+    atomic.write_text(_index_path(), json.dumps([e.model_dump() for e in entries]))
 
 
 def create(file_name: str, model_id: str, model_name: str, fmt: OutputFormat) -> ReadSummary:
@@ -60,6 +85,7 @@ def create(file_name: str, model_id: str, model_name: str, fmt: OutputFormat) ->
         output_format=fmt,
         state="queued",
         created_at=time.time(),
+        pid=os.getpid(),
     )
     with _lock:
         entries = [entry, *_load_index()]
@@ -81,12 +107,20 @@ def update(read_id: str, **fields) -> ReadSummary | None:
 
 
 def finish(read_id: str, pages: list[ReadPage], **fields) -> ReadSummary | None:
+    # The text is saved before the index says "done", so whoever sees "done" also finds
+    # the pages.
+    entry = get(read_id)
+    if entry is None:
+        return None
+    detail = ReadDetail(
+        **entry.model_copy(update=fields).model_dump(),
+        pages=pages,
+        text="\n\n".join(p.text for p in pages),
+    )
+    atomic.write_text(_detail_path(read_id), detail.model_dump_json())
     entry = update(read_id, **fields)
-    if entry is not None:
-        detail = ReadDetail(
-            **entry.model_dump(), pages=pages, text="\n\n".join(p.text for p in pages)
-        )
-        _detail_path(read_id).write_text(detail.model_dump_json(), encoding="utf-8")
+    if entry is None:  # deleted meanwhile
+        _detail_path(read_id).unlink(missing_ok=True)
     return entry
 
 
@@ -104,7 +138,7 @@ def get_detail(read_id: str) -> ReadDetail | None:
     if entry is None:
         return None
     try:
-        stored = ReadDetail.model_validate_json(_detail_path(read_id).read_text("utf-8"))
+        stored = ReadDetail.model_validate_json(atomic.read_text(_detail_path(read_id)))
     except (OSError, ValueError):
         return ReadDetail(**entry.model_dump())
     # The index is the source of truth for state; the detail file holds the text.
@@ -122,13 +156,24 @@ def delete(read_id: str) -> bool:
     return True
 
 
+def _abandoned(entry: ReadSummary) -> bool:
+    """An unfinished read whose process is gone. History is shared with the CLI and the MCP
+    server, so another live process's read is still going; this process (just started) has
+    none of its own yet."""
+    if entry.state not in _UNFINISHED:
+        return False
+    if entry.pid is None or entry.pid == os.getpid():
+        return True
+    return not psutil.pid_exists(entry.pid)
+
+
 def mark_interrupted() -> None:
-    """Reads still queued or running when the backend last stopped will never finish."""
+    """Reads still queued or running when the process doing them stopped will never finish."""
     with _lock:
         entries = _load_index()
         changed = False
         for i, entry in enumerate(entries):
-            if entry.state in _UNFINISHED:
+            if _abandoned(entry):
                 entries[i] = entry.model_copy(
                     update={"state": "error", "error": "DocBox closed before this finished"}
                 )
