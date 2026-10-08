@@ -15,6 +15,8 @@ from typing import Any
 import platformdirs
 from filelock import FileLock
 
+from docbox.backend.core import atomic
+
 _APP_NAME = "DocBox"
 _APP_AUTHOR = "docbox"
 
@@ -30,16 +32,14 @@ def _read() -> dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(atomic.read_text(path))
     except (json.JSONDecodeError, OSError):
         return {}
 
 
 def _write(data: dict[str, Any]) -> None:
     path = _settings_path()
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    atomic.write_text(path, json.dumps(data, indent=2))
 
 
 def _locked() -> FileLock:
