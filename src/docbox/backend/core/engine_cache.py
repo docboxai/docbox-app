@@ -14,6 +14,10 @@ across threads.
 Dropping an engine releases DocBox's references to it; the native libraries underneath
 (Paddle, PyTorch) may keep some of their memory pooled until the process exits.
 
+An engine whose model runs in another program (Ollama, a cloud API, an engine container:
+`runs_in_process = False`) holds nothing here worth keeping, so it's neither cached nor
+counted: reading with an Ollama model leaves the warm PaddleOCR model where it is.
+
 The benchmark worker doesn't use this: it loads each model in a fresh process, which is
 what makes its load-time and peak-memory numbers honest."""
 
@@ -75,14 +79,15 @@ _entries: OrderedDict[str, _Entry] = OrderedDict()
 _entries_lock = threading.Lock()
 
 
-def _entry_for(spec: ModelSpec) -> _Entry:
+def _entry_for(spec: ModelSpec, engine: OCREngine) -> _Entry:
+    """The cached entry for `spec`, or a new one around `engine` (a fresh instance)."""
     with _entries_lock:
         entry = _entries.get(spec.id)
         if entry is not None and entry.factory is not spec.engine_factory:
             _forget(entry)
             entry = None
         if entry is None:
-            entry = _Entry(spec.id, spec.engine_factory, spec.engine_factory())
+            entry = _Entry(spec.id, spec.engine_factory, engine)
             _entries[spec.id] = entry
         _entries.move_to_end(spec.id)
         # Least recently used first. One still reading keeps its engine until it's done
@@ -105,7 +110,14 @@ def _forget(entry: _Entry) -> None:
 def loaded(spec: ModelSpec) -> Iterator[OCREngine]:
     """The model's engine, loaded, for exclusive use until the block ends. Raises
     NotDownloaded (and forgets the engine) when the model's files are gone."""
-    entry = _entry_for(spec)
+    engine = spec.engine_factory()  # cheap: building an engine doesn't load its model
+    if not getattr(engine, "runs_in_process", True):
+        if not engine.is_downloaded():
+            raise NotDownloaded(spec)
+        engine.load()
+        yield engine
+        return
+    entry = _entry_for(spec, engine)
     with entry.lock:
         try:
             # Checked on every use: another process (the CLI, an agent) may have removed
