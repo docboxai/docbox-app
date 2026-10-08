@@ -222,6 +222,12 @@ mount and would break the managed Python.
 
 ### Child processes never outlive the app
 
+- **Port:** the shell starts the backend with `--port 0`: the backend binds a free port
+  itself, prints `{"docbox_backend": {"port": N}}` as its first stdout line and then points
+  fd 1 at stderr (`backend.log`). `main.rs::port_report` waits for that line (anything else
+  on stdout goes to the log), then polls `/api/health`; if either doesn't come, boot fails
+  with the end of `backend.log`. Run by hand, the backend still defaults to port 8756, which
+  the Vite dev proxy and Docker use.
 - **Lifeline:** the shell starts the backend with `--exit-on-stdin-close` and a piped stdin
   it never writes to (`Backend::lifeline`). When that pipe closes (the shell drops it on
   exit, or the OS closes it because the shell crashed or was force-quit), the backend stops
