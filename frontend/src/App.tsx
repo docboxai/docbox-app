@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, formatBytes } from "./lib/api";
 import { AppProvider, useApp, type ViewId } from "./lib/app";
 import { formatGb, plural } from "./lib/format";
-import { shortName } from "./components/BenchmarkChart";
+import { shortName } from "./lib/benchmarkSeries";
 import { BenchmarksView } from "./components/BenchmarksView";
 import { BootGate } from "./components/BootScreen";
 import { DeviceView } from "./components/DeviceView";

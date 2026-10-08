@@ -165,6 +165,8 @@ export interface ModelRun {
   error: string | null;
   load_seconds: number | null;
   peak_memory_mb: number | null;
+  // Why there's no memory figure: the model runs in another program's process.
+  memory_note: string | null;
 }
 
 export interface LeaderboardRow {
@@ -183,6 +185,14 @@ export interface LeaderboardRow {
   wer: number | null;
   accuracy: number | null;
   scored_chars: number;
+  // Half-width of a 95% interval around accuracy, over `scored_units` references.
+  accuracy_margin: number | null;
+  scored_units: number;
+  // "paddleocr" | "tesseract" | "ollama" | ...; a model in several sizes shares a family.
+  engine: string;
+  family: string | null;
+  variant: string | null;
+  memory_note: string | null;
 }
 
 export interface BenchSummary {
@@ -400,6 +410,9 @@ export const api = {
     `${await getBaseUrl()}/api/benchmarks/${id}/image?${new URLSearchParams({ file_id: fileId, page: String(page) })}`,
   benchmarkReportUrl: async (id: string, format: "md" | "csv" | "json") =>
     `${await getBaseUrl()}/api/benchmarks/${id}/report?format=${format}`,
+  // The desktop app can't download; it shows the saved report (or its folder) instead.
+  openBenchmarkReport: (id: string, target: "file" | "folder") =>
+    request<void>(`/api/benchmarks/${id}/report/open?target=${target}`, { method: "POST" }),
   cancelBenchmark: (id: string) => request<BenchRun>(`/api/benchmarks/${id}/cancel`, { method: "POST" }),
   rerunBenchmark: (id: string) => request<BenchRun>(`/api/benchmarks/${id}/rerun`, { method: "POST" }),
   deleteBenchmark: (id: string) => request<void>(`/api/benchmarks/${id}`, { method: "DELETE" }),
