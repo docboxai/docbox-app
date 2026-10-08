@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import shlex
 import shutil
@@ -9,8 +10,16 @@ import sys
 from pathlib import Path
 
 from docbox.cli.output import Output
+from docbox.service.errors import Unavailable
 
 CLIENTS = ("claude-code", "claude-desktop", "cursor", "vscode")
+
+# The MCP SDK comes with the `agents` extra (pyproject.toml), not with a plain install.
+INSTALL_AGENTS = 'uv tool install "docbox[agents] @ git+https://github.com/docboxai/docbox-app"'
+
+
+def _mcp_installed() -> bool:
+    return importlib.util.find_spec("mcp") is not None
 
 
 def register(sub, common) -> None:
@@ -27,6 +36,10 @@ def register(sub, common) -> None:
 
 
 def _serve(args, out: Output) -> int:
+    if not _mcp_installed():
+        raise Unavailable(
+            f"The MCP server needs DocBox's agents extra. Install it with:\n  {INSTALL_AGENTS}"
+        )
     from docbox.mcp_server import serve
 
     serve()
@@ -62,4 +75,7 @@ def _config(args, out: Output) -> int:
         value = {"mcpServers": {"docbox": server}}
         text = f"Add to {where}:\n\n{json.dumps(value, indent=2)}"
     out.result(value, lambda: print(text))
+    if not _mcp_installed() and not out.json:
+        print(f"\nNote: `docbox mcp` needs DocBox's agents extra, which isn't installed here:\n"
+              f"  {INSTALL_AGENTS}", file=sys.stderr)
     return 0

@@ -14,11 +14,14 @@ Recent files and benchmark runs when the app is installed.
 ## Install
 
 ```sh
-uv tool install git+https://github.com/docboxai/docbox-app   # puts `docbox` on PATH
-docbox device                                                # check it works
+uv tool install "docbox[agents] @ git+https://github.com/docboxai/docbox-app"   # puts `docbox` on PATH
+docbox device                                                                  # check it works
 ```
 
-From a checkout instead: `uv sync --extra paddle`, then `uv run docbox ...`.
+The `agents` extra brings the MCP SDK. For the CLI alone,
+`uv tool install git+https://github.com/docboxai/docbox-app` is enough; `docbox mcp` then
+says what to install. From a checkout instead: `uv sync --extra paddle` (the dev
+dependencies include the MCP SDK), then `uv run docbox ...`.
 
 ## Connect an MCP client
 
@@ -31,7 +34,7 @@ docbox mcp config cursor          # JSON for ~/.cursor/mcp.json
 docbox mcp config vscode          # JSON for .vscode/mcp.json
 ```
 
-Without installing: `{"command": "uvx", "args": ["--from", "git+https://github.com/docboxai/docbox-app", "docbox", "mcp"]}`.
+Without installing: `{"command": "uvx", "args": ["--from", "docbox[agents] @ git+https://github.com/docboxai/docbox-app", "docbox", "mcp"]}`.
 
 ## Tools
 
