@@ -22,3 +22,6 @@ tauri-plugin-process = "2"
 [target.'cfg(unix)'.dependencies]
 # kill(2) on a whole process group (main.rs `signal_group`).
 libc = "0.2"
+
+[target.'cfg(any(target_os = "macos", windows, target_os = "linux"))'.dependencies]
+tauri-plugin-single-instance = "2"

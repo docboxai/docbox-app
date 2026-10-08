@@ -528,8 +528,25 @@ fn retry_backend(app: AppHandle, state: State<Backend>) {
     start_boot(app);
 }
 
+/// A second launch brings the running app to the front instead of starting another one.
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 fn main() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // First, so a second launch hands over to the running app before anything else
+    // starts: two shells would run two backends and two first-run `uv sync`s against the
+    // same data dir. On Linux it needs a D-Bus session bus, and without one the app runs
+    // without this check.
+    #[cfg(desktop)]
+    let builder = builder
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main_window(app)));
+    let app = builder
         // Updates are driven from the frontend, which calls `prepare_restart` right
         // before installing (on Windows the updater exits the app to run the installer).
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -558,7 +575,11 @@ fn main() {
                 // `AppHandle::exit` posts an exit request through Tauri's event loop,
                 // but that request can be dropped depending on exactly how the close
                 // was triggered, leaving a windowless docbox.exe running indefinitely.
-                // The backend is already torn down above, so terminate directly.
+                // The backend is already torn down above, so terminate directly. That
+                // skips `RunEvent::Exit`, where the single-instance plugin would release
+                // its lock, so release it here.
+                #[cfg(desktop)]
+                tauri_plugin_single_instance::destroy(window.app_handle());
                 std::process::exit(0);
             }
         })
