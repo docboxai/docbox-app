@@ -140,6 +140,8 @@ export interface ReadSummary {
 export interface ReadPage {
   lines: OcrLine[];
   text: string;
+  // "pdf_text": the PDF page carried its own text, used as-is instead of OCR.
+  source: "ocr" | "pdf_text";
 }
 
 export interface ReadDetail extends ReadSummary {
@@ -365,11 +367,13 @@ export const api = {
     request<NvidiaApiKeyStatus>("/api/platforms/nvidia-nim/api-key"),
   clearNvidiaApiKey: () =>
     request<NvidiaApiKeyStatus>("/api/platforms/nvidia-nim/api-key", { method: "DELETE" }),
-  startReads: (modelId: string, files: File[], format: OutputFormat) => {
+  // usePdfText false reads every PDF page with the model, even pages with their own text.
+  startReads: (modelId: string, files: File[], format: OutputFormat, usePdfText = true) => {
     const form = new FormData();
     for (const file of files) form.append("files", file);
     form.append("model_id", modelId);
     form.append("output_format", format);
+    form.append("use_pdf_text", String(usePdfText));
     return request<{ reads: ReadSummary[] }>("/api/reads", { method: "POST", body: form });
   },
   listReads: () => request<ReadSummary[]>("/api/reads"),
