@@ -87,6 +87,7 @@ alongside it. Same-origin, so the backend's CORS allowlist doesn't apply there.
 ### CLI (`docbox`)
 
 ```sh
+uv tool install "docbox[agents] @ git+https://github.com/docboxai/docbox-app"   # standalone, with `docbox mcp`
 uv run docbox --help
 uv run docbox models list --json
 uv run docbox read invoice.pdf --model paddleocr-mobile-en --format md
@@ -303,7 +304,10 @@ Tests use fake engines in `tests/benchmark/bench_fakes.py`, loaded into workers 
 ### MCP server (`src/docbox/mcp_server.py`)
 
 `docbox mcp` serves an MCP server over stdio (official `mcp` SDK 2.x: `MCPServer`, not the
-1.x `FastMCP`). Tools are plain sync functions over `service/` (the SDK runs them on worker
+1.x `FastMCP`). The SDK is the `agents` extra (and in the `dev` group for tests), not a base
+dependency: the desktop app's managed runtime never runs the MCP server, so it doesn't
+download it. `cli/commands/mcp.py` imports `mcp_server` only when serving, and without the
+SDK `docbox mcp` fails with the install command; nothing else may import `mcp`. Tools are plain sync functions over `service/` (the SDK runs them on worker
 threads and diverts stray stdout writes, so a chatty OCR library can't corrupt the
 protocol); `ServiceError`s become `ToolError("<code>: <detail>")`. Long work returns an id
 to poll (`install_model` → `get_install_status`, `start_benchmark` → `get_benchmark`). Mark

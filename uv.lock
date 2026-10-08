@@ -335,7 +335,6 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "filelock" },
-    { name = "mcp" },
     { name = "packaging" },
     { name = "pillow" },
     { name = "platformdirs" },
@@ -350,6 +349,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+agents = [
+    { name = "mcp" },
+]
 easyocr = [
     { name = "easyocr" },
     { name = "opencv-contrib-python" },
@@ -366,6 +368,7 @@ paddle = [
 [package.dev-dependencies]
 dev = [
     { name = "httpx" },
+    { name = "mcp" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -376,7 +379,7 @@ requires-dist = [
     { name = "easyocr", marker = "extra == 'easyocr'", specifier = ">=1.7" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "filelock", specifier = ">=3.15" },
-    { name = "mcp", specifier = ">=2.3" },
+    { name = "mcp", marker = "extra == 'agents'", specifier = ">=2.3" },
     { name = "opencv-contrib-python", marker = "extra == 'easyocr'" },
     { name = "packaging", specifier = ">=23" },
     { name = "paddleocr", marker = "extra == 'paddle'", specifier = ">=2.9" },
@@ -394,11 +397,12 @@ requires-dist = [
     { name = "truststore", specifier = ">=0.10" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
-provides-extras = ["paddle", "easyocr"]
+provides-extras = ["paddle", "easyocr", "agents"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx", specifier = ">=0.27" },
+    { name = "mcp", specifier = ">=2.3" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "ruff", specifier = ">=0.6" },

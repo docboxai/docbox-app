@@ -59,6 +59,10 @@ _EXTRA_ROOT_DISTS: dict[str, tuple[str, ...]] = {
     "easyocr": ("easyocr", "torch", "torchvision"),
 }
 
+# What the `agents` extra installs (the MCP server). Not an engine DocBox installs or
+# removes, but removing an engine must not take away packages the two share.
+_NON_ENGINE_ROOT_DISTS: tuple[str, ...] = ("mcp",)
+
 
 class EngineInstallError(RuntimeError):
     pass
@@ -323,9 +327,10 @@ def _base_root_dists() -> list[str]:
 
 def _exclusive_dists(name: str) -> set[str]:
     """Distributions only this extra needs: not the base install's, not another
-    installed extra's."""
+    installed extra's (engines, or the MCP server's when it's installed)."""
     others = set().union(
-        *(_dist_closure(_EXTRA_ROOT_DISTS[e]) for e in installed_extras() if e != name)
+        *(_dist_closure(_EXTRA_ROOT_DISTS[e]) for e in installed_extras() if e != name),
+        _dist_closure(_NON_ENGINE_ROOT_DISTS),
     )
     return _dist_closure(_EXTRA_ROOT_DISTS[name]) - _dist_closure(_base_root_dists()) - others
 
