@@ -187,7 +187,9 @@ def _own_text(page) -> tuple[str, list[OcrLine]] | None:
     # Rotated pages are left to OCR rather than turning the text boxes with the page.
     if page.get_rotation() % 360:
         return None
-    left, bottom, right, top = page.get_cropbox()
+    # The box render() draws. Not get_cropbox(): it doesn't look up a box the page inherits
+    # from the page tree, and falls back to US Letter.
+    left, bottom, right, top = page.get_bbox()
     if right <= left or top <= bottom:
         return None
 

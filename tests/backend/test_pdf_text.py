@@ -74,6 +74,23 @@ def test_own_text_lines_are_placed_like_an_engines(two_models) -> None:
     assert pages[0].image is None  # not rendered: nothing needs the picture
 
 
+@pytest.mark.parametrize("box_on_tree", [False, True])
+def test_pages_are_measured_by_their_own_size_even_when_inherited(box_on_tree: bool) -> None:
+    """Many producers set the page size once, on the page tree. An A4 page's lines go where
+    they are on A4, and a scan the size of a receipt is still a scan (not a text page
+    because its image covers too little of a US letter page)."""
+    scale = _PDF_RENDER_DPI / 72
+    a4_h = 842
+    [a4] = iter_read_pages(make_pdf([Page(lines=INVOICE)], size=(595, a4_h),
+                                    box_on_tree=box_on_tree), "application/pdf")
+    _, top, _, bottom = a4.lines[0].box
+    assert (a4_h - TEXT_TOP - FONT_SIZE) * scale <= top < bottom <= (a4_h - TEXT_TOP + 4) * scale
+
+    [receipt] = iter_read_pages(make_pdf([Page(image=scan(), lines=INVOICE)], size=(226, 792),
+                                         box_on_tree=box_on_tree), "application/pdf")
+    assert receipt.lines is None and receipt.image is not None
+
+
 def test_scans_and_pages_with_too_little_text_are_read_by_the_model(two_models) -> None:
     (a, stats), _ = two_models
     pdf = make_pdf([
