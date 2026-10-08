@@ -51,6 +51,9 @@ def _remote_detail(resp: requests.Response) -> str:
 class RemoteEngine:
     """Proxies OCREngine calls for `model_id` to a sibling backend at `base_url`."""
 
+    # The model runs in the sibling backend's process (see base.py).
+    runs_in_process = False
+
     def __init__(
         self, *, base_url: str, model_id: str, run_timeout_s: float = DEFAULT_RUN_TIMEOUT_S
     ) -> None:

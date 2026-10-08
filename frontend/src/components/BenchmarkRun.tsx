@@ -1,17 +1,15 @@
 // One benchmark run: its leaderboard, and the design's Compare card (the page beside
 // every model's reading of it, mistakes against the reference marked as slips).
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Download, RotateCw, Square, Trash2, X } from "lucide-react";
-import { api, type BenchRun, type DiffSpan, type LeaderboardRow, type PageView } from "../lib/api";
+import { ChevronLeft, ChevronRight, Download, FileText, RotateCw, Square, Trash2, X } from "lucide-react";
+import { api, type BenchRun, type DiffSpan, type PageView } from "../lib/api";
 import { useApp } from "../lib/app";
-import { formatMb, plural } from "../lib/format";
-import { BenchmarkChart } from "./BenchmarkChart";
-import { Button, Card, Chip, Notice, ProgressBar, SectionLabel, Spinner, cx } from "./ui";
+import { IN_TAURI } from "../lib/host";
+import { plural } from "../lib/format";
+import { BenchmarkLeaderboard } from "./BenchmarkLeaderboard";
+import { Button, Card, Chip, Notice, ProgressBar, SectionLabel, Spinner } from "./ui";
 
 const POLL_MS = 1000;
-
-const pct = (v: number | null) => (v == null ? "–" : `${(v * 100).toFixed(1)}%`);
-const secs = (v: number | null, digits = 2) => (v == null ? "–" : `${v.toFixed(digits)} s`);
 
 const SOURCE: Record<string, string> = { app: "started here", cli: "from the command line", mcp: "from an AI agent" };
 
@@ -31,100 +29,6 @@ function useRun(summary: BenchRun): BenchRun {
     };
   }, [summary.id, summary.state, busy]);
   return run;
-}
-
-// The best value in each column, so the table can point it out.
-function bests(rows: LeaderboardRow[]) {
-  const ranked = rows.filter((r) => r.pages_read > 0);
-  const min = (f: (r: LeaderboardRow) => number | null) => {
-    const vals = ranked.map(f).filter((v): v is number => v != null);
-    return vals.length > 1 ? Math.min(...vals) : null;
-  };
-  const max = (f: (r: LeaderboardRow) => number | null) => {
-    const vals = ranked.map(f).filter((v): v is number => v != null);
-    return vals.length > 1 ? Math.max(...vals) : null;
-  };
-  return {
-    accuracy: max((r) => r.accuracy),
-    wer: min((r) => r.wer),
-    speed: min((r) => r.seconds_per_page),
-    load: min((r) => r.load_seconds),
-    memory: min((r) => r.peak_memory_mb),
-    confidence: max((r) => r.mean_confidence),
-  };
-}
-
-// Highlighted only when there is a value and it's the column's best.
-const isBest = (value: number | null, best: number | null) => value != null && value === best;
-
-function Cell({ best, children, className }: { best?: boolean; children: React.ReactNode; className?: string }) {
-  return (
-    <td className={cx("px-3 py-2.5 text-right tabular-nums whitespace-nowrap", best && "font-semibold text-success", className)}>
-      {children}
-    </td>
-  );
-}
-
-function Leaderboard({ run }: { run: BenchRun }) {
-  const { settings, updateSettings } = useApp();
-  const rows = run.summary?.leaderboard ?? [];
-  const b = bests(rows);
-  const scored = run.summary?.ranked_by === "cer";
-  if (!rows.length) return null;
-  return (
-    <section aria-label="Leaderboard" className="overflow-x-auto">
-      <table className="w-full min-w-[820px] border-collapse text-sm">
-        <caption className="sr-only">
-          Models ranked by {scored ? "accuracy against the reference text" : "speed (no reference text)"}
-        </caption>
-        <thead>
-          <tr className="text-xs font-medium tracking-[0.3px] text-fg-muted uppercase">
-            <th scope="col" className="w-10 px-3 py-2 text-left">#</th>
-            <th scope="col" className="px-3 py-2 text-left">Model</th>
-            <th scope="col" className="px-3 py-2 text-right" title="1 − character error rate">Accuracy</th>
-            <th scope="col" className="px-3 py-2 text-right" title="Word error rate">WER</th>
-            <th scope="col" className="px-3 py-2 text-right">Per page</th>
-            <th scope="col" className="px-3 py-2 text-right">Load</th>
-            <th scope="col" className="px-3 py-2 text-right">Peak RAM</th>
-            <th scope="col" className="px-3 py-2 text-right">Confidence</th>
-            <th scope="col" className="px-3 py-2 text-right">Failed</th>
-            <th scope="col" className="px-3 py-2"><span className="sr-only">Actions</span></th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const isDefault = settings?.default_model_id === r.model_id;
-            return (
-              <tr key={r.model_id} className="border-t border-line/70">
-                <td className="px-3 py-2.5 font-heading text-base font-semibold tabular-nums">{r.rank ?? "–"}</td>
-                <th scope="row" className="max-w-[280px] px-3 py-2.5 text-left font-medium">
-                  <span className="block truncate" title={`${r.name} (${r.model_id})`}>{r.name}</span>
-                </th>
-                <Cell best={scored && isBest(r.accuracy, b.accuracy)}>{pct(r.accuracy)}</Cell>
-                <Cell best={scored && isBest(r.wer, b.wer)}>{pct(r.wer)}</Cell>
-                <Cell best={isBest(r.seconds_per_page, b.speed)}>{secs(r.seconds_per_page)}</Cell>
-                <Cell best={isBest(r.load_seconds, b.load)}>{secs(r.load_seconds, 1)}</Cell>
-                <Cell best={isBest(r.peak_memory_mb, b.memory)}>{r.peak_memory_mb == null ? "–" : formatMb(r.peak_memory_mb)}</Cell>
-                <Cell best={isBest(r.mean_confidence, b.confidence)}>{pct(r.mean_confidence)}</Cell>
-                <Cell className={r.pages_failed ? "text-danger" : "text-fg-muted"}>{r.pages_failed}</Cell>
-                <td className="px-3 py-2 text-right">
-                  {isDefault ? (
-                    <Chip tone="success">Default</Chip>
-                  ) : (
-                    r.pages_read > 0 && (
-                      <Button size="sm" variant="outline" onClick={() => void updateSettings({ default_model_id: r.model_id })}>
-                        Set as default
-                      </Button>
-                    )
-                  )}
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </section>
-  );
 }
 
 // A model's reading with its slips marked: changed or added text highlighted (hover shows
@@ -320,9 +224,22 @@ export function BenchmarkRun({
   const busy = run.state === "running" || run.state === "queued";
   const total = run.pages_total * run.models.length;
   const current = run.models.find((m) => m.model_id === run.current_model_id);
-  const problems = run.models.filter((m) => m.error && m.error !== "Cancelled");
+  const problems = run.models.flatMap((m) => {
+    if (m.error === "Cancelled") return [];
+    if (m.error) return [{ model: m, text: m.error.split("\n")[0] }];
+    // A model that failed every page (timeouts, a refused key) finishes without an error
+    // but has nothing to place on the leaderboard: say why it isn't there.
+    const row = run.summary?.leaderboard.find((r) => r.model_id === m.model_id);
+    if (m.state === "done" && row && row.pages_read === 0 && row.pages_failed > 0) {
+      return [{ model: m, text: `read none of its ${plural(row.pages_failed, "page")}` }];
+    }
+    return [];
+  });
 
+  // A download works in a browser; the desktop webview can't save one, so the app shows
+  // the saved report on this computer instead.
   useEffect(() => {
+    if (IN_TAURI) return;
     void api.benchmarkReportUrl(run.id, "md").then(setReportUrl);
   }, [run.id]);
 
@@ -366,16 +283,23 @@ export function BenchmarkRun({
               Run again
             </Button>
           )}
-          {reportUrl && !busy && (
-            <a
-              href={reportUrl}
-              download
-              className="inline-flex h-8 items-center gap-[5px] rounded-3xl px-3 text-[13px] font-medium whitespace-nowrap text-fg ring-1 ring-line ring-inset transition-colors hover:bg-line/60"
-            >
-              <Download aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
-              Report
-            </a>
-          )}
+          {!busy &&
+            (IN_TAURI ? (
+              <Button size="sm" variant="outline" icon={FileText} onClick={() => void act(() => api.openBenchmarkReport(run.id, "file"))}>
+                Report
+              </Button>
+            ) : (
+              reportUrl && (
+                <a
+                  href={reportUrl}
+                  download
+                  className="inline-flex h-8 items-center gap-[5px] rounded-3xl px-3 text-[13px] font-medium whitespace-nowrap text-fg ring-1 ring-line ring-inset transition-colors hover:bg-line/60"
+                >
+                  <Download aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                  Report
+                </a>
+              )
+            ))}
           {confirmDelete ? (
             <span className="flex items-center gap-1.5 rounded-3xl bg-line/60 py-0.5 pr-0.5 pl-3 text-[13px]">
               Delete this benchmark and its results?
@@ -415,9 +339,9 @@ export function BenchmarkRun({
         {problems.length > 0 && (
           <Notice tone="warning">
             <ul className="flex flex-col gap-0.5">
-              {problems.map((m) => (
-                <li key={m.model_id}>
-                  <span className="font-medium">{m.name}</span>: {m.error?.split("\n")[0]}
+              {problems.map(({ model, text }) => (
+                <li key={model.model_id}>
+                  <span className="font-medium">{model.name}</span>: {text}
                 </li>
               ))}
             </ul>
@@ -428,8 +352,7 @@ export function BenchmarkRun({
             No reference text, so models are ranked by speed. Add <code className="text-fg">name.gt.txt</code> files with the correct text to rank by accuracy.
           </p>
         )}
-        <BenchmarkChart run={run} />
-        <Leaderboard run={run} />
+        <BenchmarkLeaderboard run={run} />
         <Compare run={run} />
       </div>
     </Card>

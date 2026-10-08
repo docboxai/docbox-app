@@ -46,6 +46,8 @@ registry.register(
         tier=Tier.LIGHT,
         quality=30,
         name="PaddleOCR Mobile — English",
+        family="PaddleOCR — English",
+        variant="Mobile",
         engine="paddleocr",
         requires_extra="paddle",
         description=(
@@ -70,6 +72,8 @@ registry.register(
         tier=Tier.LIGHT,
         quality=20,
         name="PaddleOCR Mobile — Chinese + English",
+        family="PaddleOCR — Chinese + English",
+        variant="Mobile",
         engine="paddleocr",
         requires_extra="paddle",
         description=(
@@ -96,6 +100,8 @@ registry.register(
         tier=Tier.STANDARD,
         quality=60,
         name="PaddleOCR Balanced — Chinese + English",
+        family="PaddleOCR — Chinese + English",
+        variant="Balanced",
         engine="paddleocr",
         requires_extra="paddle",
         description=(
@@ -120,6 +126,8 @@ registry.register(
         tier=Tier.STANDARD,
         quality=50,
         name="PaddleOCR Large — English",
+        family="PaddleOCR — English",
+        variant="Large",
         engine="paddleocr",
         requires_extra="paddle",
         description=(

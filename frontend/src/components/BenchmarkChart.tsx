@@ -1,66 +1,35 @@
-// The benchmark graph: every model as a point, how well it reads (up) against what it
-// costs (left is cheaper), like DeepSWE's score-vs-cost chart. "This run" plots the
-// run's own measurements; "OCRBench v1/v2" plots published scores for the vision models
-// that have one, against the model's download size, as a reference.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ExternalLink } from "lucide-react";
-import { api, type BenchRun, type ModelInfo, type ReferenceData } from "../lib/api";
-import { formatMb } from "../lib/format";
-import { SectionLabel, cx } from "./ui";
+// The benchmark graph: how well each model reads (up) against what it costs, cheapest on
+// the right, so the most efficient models sit in the top-right corner. One model's sizes
+// (PaddleOCR Mobile and Large, an Ollama model's tags) are joined by a line in their
+// engine's colour and labelled once, at the best of them.
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { SERIES, type SeriesKey } from "../lib/benchmarkSeries";
 
-type Source = "run" | "v1" | "v2";
-type XKey = "speed" | "memory" | "load";
-type Family = "paddle" | "tesseract" | "ollama" | "other";
-
-// Three hues at most on a scatter (all pairs must stay distinguishable for colour-blind
-// readers); every other engine shares the neutral. Every point is also labelled by name.
-const FAMILY: Record<Family, { label: string; color: string }> = {
-  paddle: { label: "PaddleOCR", color: "var(--color-series-1)" },
-  tesseract: { label: "Tesseract", color: "var(--color-series-2)" },
-  ollama: { label: "Ollama vision models", color: "var(--color-series-3)" },
-  other: { label: "Other engines", color: "var(--color-series-other)" },
-};
-
-function familyOf(modelId: string): Family {
-  if (modelId.startsWith("paddleocr")) return "paddle";
-  if (modelId.startsWith("tesseract")) return "tesseract";
-  if (modelId.startsWith("ollama:")) return "ollama";
-  return "other";
-}
-
-interface Point {
+export interface ChartPoint {
   id: string;
-  // Beside the point; `name` (in full) heads the tooltip.
-  label: string;
+  /** In full; heads the tooltip. */
   name: string;
-  family: Family;
+  /** Points of one family are joined by a line. */
+  family: string;
+  /** The family's direct label. */
+  label: string;
+  /** Which size of the family this point is. */
+  variant: string | null;
+  series: SeriesKey;
   x: number;
   y: number;
-  filled: boolean;
-  best: boolean;
+  /** Drawn as a ring: e.g. a published score for a model that isn't installed here. */
+  hollow?: boolean;
+  /** Tooltip rows: [label, value]. */
   rows: [string, string][];
 }
 
-// Short names for point labels ("PaddleOCR Balanced — Chinese + English" -> "PaddleOCR
-// Balanced"); the tooltip keeps the full name.
-const ENGINE_NAMES = new Set(["PaddleOCR", "Tesseract", "EasyOCR", "Ollama", "NVIDIA NIM"]);
-export function shortName(name: string): string {
-  const [head, tail] = name.split(" — ");
-  if (!tail) return name;
-  return ENGINE_NAMES.has(head) ? `${head} ${tail}` : head;
-}
-
-// Axis ticks in round decimal units (5,000 MB reads "5 GB", not "4.9 GB").
-const mbTick = (v: number) => (v >= 1000 ? `${+(v / 1000).toFixed(1)} GB` : `${+v.toFixed(0)} MB`);
-
-const pct = (v: number | null | undefined) => (v == null ? "–" : `${(v * 100).toFixed(1)}%`);
-const secs = (v: number | null | undefined, digits = 2) => (v == null ? "–" : `${v.toFixed(digits)} s`);
-
-const X_AXES: Record<XKey, { label: string; short: string; unit: (v: number) => string }> = {
-  speed: { label: "Seconds per page", short: "Per page", unit: (v) => `${v < 1 ? v.toFixed(2) : v.toFixed(1)} s` },
-  memory: { label: "Peak memory", short: "Peak RAM", unit: mbTick },
-  load: { label: "Load time", short: "Load time", unit: (v) => `${v < 1 ? v.toFixed(2) : v.toFixed(1)} s` },
-};
+const HEIGHT = 420;
+const M = { top: 52, right: 28, bottom: 54, left: 54 };
+// Average glyph widths, to place labels before they render (12px semibold, 10px caps).
+const LABEL_PX = 7.1;
+const VARIANT_PX = 7.2;
+const DOT_R = 4.5;
 
 // --- scales ---------------------------------------------------------------------------
 
@@ -103,75 +72,104 @@ function linearDomain(values: number[], cap: number): { domain: [number, number]
   return { domain: [d0, d1], ticks };
 }
 
-// The points nothing else beats on both counts: cheaper-or-equal and better.
-function frontier(points: Point[]): Point[] {
-  const out: Point[] = [];
-  let bestY = -Infinity;
-  for (const p of [...points].sort((a, b) => a.x - b.x || b.y - a.y)) {
-    if (p.y > bestY) {
-      out.push(p);
-      bestY = p.y;
-    }
-  }
-  return out;
+// --- labels ---------------------------------------------------------------------------
+
+interface Box {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
 }
 
-// --- controls -------------------------------------------------------------------------
+interface Placed {
+  point: ChartPoint;
+  box: Box;
+  /** Pushed away from its point: drawn with a hairline back to it. */
+  leader: boolean;
+}
 
-function Segmented<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div role="radiogroup" aria-label={label} className="flex h-8 gap-0.5 rounded-3xl bg-line p-[3px]">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={o.value === value}
-          onClick={() => onChange(o.value)}
-          className={cx(
-            "rounded-3xl px-3 text-[13px] font-medium whitespace-nowrap transition-colors",
-            o.value === value ? "bg-fg text-ink" : "text-fg-muted hover:text-fg",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
+// One label per family, at its best point. Spots are tried nearest first (above, right,
+// left, below, then the diagonals, at growing distances), keeping clear of the plot's
+// edges, every point and the labels already placed; with no clear spot, the one that
+// overlaps least is used. A label away from its point is tied back by a leader line.
+const RINGS = [11, 30, 52, 76];
+
+function placeLabels(
+  points: ChartPoint[],
+  lines: ChartPoint[][],
+  sx: (v: number) => number,
+  sy: (v: number) => number,
+  bounds: Box,
+): Placed[] {
+  const anchors = [...new Map(points.map((p) => [p.family, p])).keys()].map((family) => {
+    const members = points.filter((p) => p.family === family);
+    return members.reduce((a, b) => (b.y > a.y || (b.y === a.y && sx(b.x) > sx(a.x)) ? b : a));
+  });
+  const dots: Box[] = points.map((p) => ({ x1: sx(p.x) - 7, y1: sy(p.y) - 7, x2: sx(p.x) + 7, y2: sy(p.y) + 7 }));
+  // The family lines too, as small boxes every 6px along them, so text doesn't sit on one.
+  for (const members of lines) {
+    for (let i = 1; i < members.length; i++) {
+      const [ax, ay, bx, by] = [sx(members[i - 1].x), sy(members[i - 1].y), sx(members[i].x), sy(members[i].y)];
+      const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, by - ay) / 6));
+      for (let k = 0; k <= steps; k++) {
+        const x = ax + ((bx - ax) * k) / steps;
+        const y = ay + ((by - ay) * k) / steps;
+        dots.push({ x1: x - 2, y1: y - 2, x2: x + 2, y2: y + 2 });
+      }
+    }
+  }
+  const placed: Placed[] = [];
+  const area = (a: Box, b: Box) =>
+    Math.max(0, Math.min(a.x2, b.x2) - Math.max(a.x1, b.x1)) * Math.max(0, Math.min(a.y2, b.y2) - Math.max(a.y1, b.y1));
+  const clash = (b: Box) =>
+    placed.reduce((sum, q) => sum + area(q.box, b), 0) + dots.reduce((sum, d) => sum + area(d, b), 0);
+
+  for (const p of [...anchors].sort((a, b) => sy(a.y) - sy(b.y))) {
+    const w = Math.max(p.label.length * LABEL_PX, (p.variant?.length ?? 0) * VARIANT_PX);
+    const h = p.variant ? 27 : 15;
+    const px = sx(p.x);
+    const py = sy(p.y);
+    const spots: { box: Box; near: boolean }[] = [];
+    for (const d of RINGS) {
+      const at = (x: number, y: number) => ({ box: { x1: x, y1: y, x2: x + w, y2: y + h }, near: d === RINGS[0] });
+      spots.push(
+        at(px - w / 2, py - d - h),
+        at(px + d, py - h / 2),
+        at(px - d - w, py - h / 2),
+        at(px - w / 2, py + d),
+        at(px + d * 0.7, py - d * 0.7 - h),
+        at(px - d * 0.7 - w, py - d * 0.7 - h),
+        at(px + d * 0.7, py + d * 0.7),
+        at(px - d * 0.7 - w, py + d * 0.7),
+      );
+    }
+    const inside = spots.filter(({ box: b }) => b.x1 >= bounds.x1 && b.x2 <= bounds.x2 && b.y1 >= bounds.y1 && b.y2 <= bounds.y2);
+    const pick = inside.find((s) => clash(s.box) === 0) ?? [...inside].sort((a, b) => clash(a.box) - clash(b.box))[0] ?? spots[0];
+    placed.push({ point: p, box: pick.box, leader: !pick.near });
+  }
+  return placed;
 }
 
 // --- the plot -------------------------------------------------------------------------
 
-const HEIGHT = 360;
-const M = { top: 30, right: 28, bottom: 50, left: 58 };
-const LABEL_PX = 6.7; // average glyph width at 12px, for placing labels before they render
-
-function Plot({
+export function BenchmarkChart({
   points,
+  title,
   xLabel,
   xFormat,
-  yLabel,
   yFormat,
   yCap,
-  showFrontier,
+  ariaLabel,
 }: {
-  points: Point[];
-  showFrontier: boolean;
+  points: ChartPoint[];
+  /** What the height measures, written above the plot. */
+  title: string;
   xLabel: string;
   xFormat: (v: number) => string;
-  yLabel: string;
   yFormat: (v: number) => string;
+  /** Highest possible y (100 for a percentage). */
   yCap: number;
+  ariaLabel: string;
 }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(760);
@@ -185,46 +183,43 @@ function Plot({
     return () => ro.disconnect();
   }, []);
 
+  const plotW = width - M.left - M.right;
+  const plotH = HEIGHT - M.top - M.bottom;
   const xDomain = logDomain(points.map((p) => p.x));
   const xTicks = logTicks(xDomain);
   const { domain: yDomain, ticks: yTicks } = linearDomain(points.map((p) => p.y), yCap);
-  const plotW = width - M.left - M.right;
-  const plotH = HEIGHT - M.top - M.bottom;
-  const sx = (v: number) =>
-    M.left + ((Math.log10(v) - Math.log10(xDomain[0])) / (Math.log10(xDomain[1]) - Math.log10(xDomain[0]))) * plotW;
+  const logSpan = Math.log10(xDomain[1]) - Math.log10(xDomain[0]);
+  // Reversed: the cheapest end of the axis is on the right.
+  const sx = (v: number) => M.left + (1 - (Math.log10(v) - Math.log10(xDomain[0])) / logSpan) * plotW;
   const sy = (v: number) => M.top + (1 - (v - yDomain[0]) / (yDomain[1] - yDomain[0] || 1)) * plotH;
 
-  const front = showFrontier ? frontier(points) : [];
+  const families = useMemo(() => {
+    const byFamily = new Map<string, ChartPoint[]>();
+    for (const p of points) byFamily.set(p.family, [...(byFamily.get(p.family) ?? []), p]);
+    return [...byFamily.values()].map((members) => [...members].sort((a, b) => b.x - a.x));
+  }, [points]);
 
-  // Direct labels beside each point; nudged down when they would overlap one already
-  // placed, with a hairline back to the point when nudged.
-  const labels = (() => {
-    const placed: { x1: number; x2: number; y: number }[] = [];
-    return [...points]
-      .sort((a, b) => sy(a.y) - sy(b.y))
-      .map((p) => {
-        const px = sx(p.x);
-        const py = sy(p.y);
-        const w = p.label.length * LABEL_PX;
-        const right = px + 12 + w <= width - 6;
-        const x1 = right ? px + 12 : px - 12 - w;
-        let y = py + 4;
-        for (let guard = 0; guard < 20; guard++) {
-          const hit = placed.find((b) => Math.abs(b.y - y) < 15 && x1 < b.x2 && x1 + w > b.x1);
-          if (!hit) break;
-          y = hit.y + 15;
-        }
-        placed.push({ x1, x2: x1 + w, y });
-        return { id: p.id, x: right ? px + 12 : px - 12, y, anchor: right ? "start" : "end", moved: Math.abs(y - (py + 4)) > 3, px, py };
-      });
-  })();
-
+  const labels = placeLabels(points, families.filter((m) => m.length > 1), sx, sy, {
+    x1: M.left - 8,
+    y1: M.top - 4,
+    x2: width - 4,
+    y2: HEIGHT - M.bottom - 2,
+  });
   const activePoint = points.find((p) => p.id === active);
+  const activeFamily = activePoint?.family ?? null;
+  const dim = (family: string) => (activeFamily !== null && family !== activeFamily ? 0.28 : 1);
 
   return (
     <div ref={wrapRef} className="relative w-full">
-      <svg width={width} height={HEIGHT} role="img" aria-label={`${yLabel} against ${xLabel} for ${points.length} models`} className="block">
-        {/* grid and axes: hairlines, one step off the surface */}
+      <svg width={width} height={HEIGHT} role="img" aria-label={ariaLabel} className="block">
+        <text x={M.left - 6} y={24} fontSize={14} fontWeight={600} fill="var(--color-fg)">
+          {title}
+        </text>
+        <text x={width - M.right} y={24} textAnchor="end" fontSize={12} fontStyle="italic" fill="var(--color-fg-muted)">
+          most efficient ↗
+        </text>
+
+        {/* grid and axes: solid hairlines, one step off the surface */}
         {yTicks.map((t) => (
           <g key={`y${t}`}>
             <line x1={M.left} x2={width - M.right} y1={sy(t)} y2={sy(t)} stroke="var(--color-line)" strokeWidth={1} />
@@ -242,36 +237,48 @@ function Plot({
           </g>
         ))}
         <line x1={M.left} x2={width - M.right} y1={HEIGHT - M.bottom} y2={HEIGHT - M.bottom} stroke="var(--color-fg-muted)" strokeOpacity={0.5} strokeWidth={1} />
-        <text x={M.left + plotW / 2} y={HEIGHT - 10} textAnchor="middle" fontSize={12} fill="var(--color-fg-muted)">
-          {xLabel} · log scale, less is better
+        <text x={M.left + plotW / 2} y={HEIGHT - 12} textAnchor="middle" fontSize={12} fill="var(--color-fg-muted)">
+          {xLabel} · log scale, cheaper to the right
         </text>
-        <text x={16} y={M.top + plotH / 2} textAnchor="middle" fontSize={12} fill="var(--color-fg-muted)" transform={`rotate(-90 16 ${M.top + plotH / 2})`}>
-          {yLabel}
-        </text>
-        {showFrontier && (
-          <text x={M.left + 8} y={M.top - 10} fontSize={12} fontWeight={600} fill="var(--color-fg)">
-            ↖ most efficient
-          </text>
-        )}
 
-        {/* best trade-offs: the frontier no other model beats on both axes */}
-        {front.length > 1 && (
-          <polyline
-            points={front.map((p) => `${sx(p.x)},${sy(p.y)}`).join(" ")}
-            fill="none"
-            stroke="var(--color-fg-muted)"
-            strokeWidth={1.5}
-            strokeDasharray="5 5"
-          />
-        )}
+        {/* one line per family, through its sizes */}
+        {families
+          .filter((members) => members.length > 1)
+          .map((members) => (
+            <polyline
+              key={`line${members[0].family}`}
+              points={members.map((p) => `${sx(p.x)},${sy(p.y)}`).join(" ")}
+              fill="none"
+              stroke={SERIES[members[0].series].color}
+              strokeWidth={activeFamily === members[0].family ? 3 : 2}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              opacity={dim(members[0].family)}
+            />
+          ))}
 
-        {labels.map((l) =>
-          l.moved ? <line key={`lead${l.id}`} x1={l.px} y1={l.py} x2={l.x} y2={l.y - 4} stroke="var(--color-fg-muted)" strokeWidth={1} opacity={0.6} /> : null,
-        )}
+        {labels.map((l) => {
+          if (!l.leader) return null;
+          const px = sx(l.point.x);
+          const py = sy(l.point.y);
+          const ex = Math.min(Math.max(px, l.box.x1), l.box.x2);
+          const ey = Math.min(Math.max(py, l.box.y1), l.box.y2);
+          return (
+            <line
+              key={`lead${l.point.id}`}
+              x1={px}
+              y1={py}
+              x2={ex}
+              y2={ey}
+              stroke={SERIES[l.point.series].color}
+              strokeWidth={1}
+              opacity={0.7 * dim(l.point.family)}
+            />
+          );
+        })}
 
         {points.map((p) => {
-          const color = FAMILY[p.family].color;
-          const r = p.best ? 7 : 6;
+          const color = SERIES[p.series].color;
           return (
             <g
               key={p.id}
@@ -282,297 +289,62 @@ function Plot({
               onMouseLeave={() => setActive((a) => (a === p.id ? null : a))}
               onFocus={() => setActive(p.id)}
               onBlur={() => setActive((a) => (a === p.id ? null : a))}
+              opacity={dim(p.family)}
               className="cursor-default outline-none [&:focus-visible>circle:last-child]:stroke-secondary"
             >
               {/* the hit target is bigger than the mark */}
-              <circle cx={sx(p.x)} cy={sy(p.y)} r={14} fill="transparent" />
+              <circle cx={sx(p.x)} cy={sy(p.y)} r={12} fill="transparent" />
               <circle
                 cx={sx(p.x)}
                 cy={sy(p.y)}
-                r={active === p.id ? r + 1.5 : r}
-                fill={p.filled ? color : "var(--color-surface)"}
-                stroke={p.filled ? "var(--color-surface)" : color}
+                r={active === p.id ? DOT_R + 1.5 : DOT_R}
+                fill={p.hollow ? "var(--color-surface)" : color}
+                stroke={p.hollow ? color : "var(--color-surface)"}
                 strokeWidth={2}
               />
             </g>
           );
         })}
 
-        {labels.map((l) => {
-          const p = points.find((q) => q.id === l.id)!;
-          return (
-            <text key={`label${l.id}`} x={l.x} y={l.y} textAnchor={l.anchor as "start" | "end"} fontSize={12} fontWeight={p.best ? 600 : 400} fill={p.best ? "var(--color-fg)" : "var(--color-fg-muted)"} stroke="var(--color-surface)" strokeWidth={4} strokeLinejoin="round" paintOrder="stroke" pointerEvents="none">
+        {labels.map(({ point: p, box }) => (
+          <g key={`label${p.family}`} opacity={dim(p.family)} pointerEvents="none">
+            <text x={box.x1} y={box.y1 + 11.5} fontSize={12} fontWeight={600} fill="var(--color-fg)" stroke="var(--color-surface)" strokeWidth={4} strokeLinejoin="round" paintOrder="stroke">
               {p.label}
             </text>
-          );
-        })}
+            {p.variant && (
+              <text x={box.x1} y={box.y1 + 24} fontSize={10} letterSpacing={0.6} fill="var(--color-fg-muted)" stroke="var(--color-surface)" strokeWidth={4} strokeLinejoin="round" paintOrder="stroke">
+                {p.variant.toUpperCase()}
+              </text>
+            )}
+          </g>
+        ))}
       </svg>
 
       {activePoint && (
         <div
           role="tooltip"
-          className="pointer-events-none absolute z-10 w-60 rounded-xl bg-ink px-3 py-2.5 text-[13px] shadow-[0_8px_24px_#00000066] ring-1 ring-line"
+          className="pointer-events-none absolute z-10 w-64 rounded-xl bg-ink px-3 py-2.5 text-[13px] shadow-[0_8px_24px_#00000066] ring-1 ring-line"
           style={{
-            left: Math.min(Math.max(8, sx(activePoint.x) + 16), width - 248),
-            top: Math.max(4, sy(activePoint.y) - 20),
+            left: Math.min(Math.max(8, sx(activePoint.x) + 16), width - 264),
+            top: Math.min(Math.max(4, sy(activePoint.y) - 20), HEIGHT - 150),
           }}
         >
           <p className="flex items-center gap-2 pb-1.5 font-medium text-fg">
-            <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: FAMILY[activePoint.family].color }} />
+            <svg aria-hidden="true" width="14" height="4" className="shrink-0">
+              <line x1="0" x2="14" y1="2" y2="2" stroke={SERIES[activePoint.series].color} strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
             {activePoint.name}
           </p>
           <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
             {activePoint.rows.map(([k, v]) => (
               <div key={k} className="contents">
                 <dt className="text-fg-muted">{k}</dt>
-                <dd className="text-right text-fg tabular-nums">{v}</dd>
+                <dd className="text-right font-medium text-fg tabular-nums">{v}</dd>
               </div>
             ))}
           </dl>
         </div>
       )}
     </div>
-  );
-}
-
-function Legend({ families, hollow, frontier: withFrontier }: { families: Family[]; hollow: boolean; frontier: boolean }) {
-  return (
-    <ul className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-fg-muted" aria-label="Legend">
-      {families.map((f) => (
-        <li key={f} className="flex items-center gap-1.5">
-          <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full" style={{ background: FAMILY[f].color }} />
-          {FAMILY[f].label}
-        </li>
-      ))}
-      {hollow && (
-        <li className="flex items-center gap-1.5">
-          <span aria-hidden="true" className="h-2.5 w-2.5 rounded-full ring-2 ring-fg-muted ring-inset" />
-          not installed here
-        </li>
-      )}
-      {withFrontier && (
-      <li className="flex items-center gap-1.5">
-        <svg aria-hidden="true" width="18" height="6">
-          <line x1="0" x2="18" y1="3" y2="3" stroke="var(--color-fg-muted)" strokeWidth="1.5" strokeDasharray="4 3" />
-        </svg>
-        best trade-offs
-      </li>
-      )}
-    </ul>
-  );
-}
-
-// --- the section ----------------------------------------------------------------------
-
-export function BenchmarkChart({ run }: { run: BenchRun }) {
-  const [source, setSource] = useState<Source>("run");
-  const [xKey, setXKey] = useState<XKey>("speed");
-  const [split, setSplit] = useState<"en" | "zh">("en");
-  const [reference, setReference] = useState<ReferenceData | null>(null);
-  const [catalog, setCatalog] = useState<ModelInfo[] | null>(null);
-
-  useEffect(() => {
-    if (source === "run" || (reference && catalog)) return;
-    api.benchmarkReference().then(setReference, () => setReference(null));
-    api.listModels().then(setCatalog, () => setCatalog([]));
-  }, [source, reference, catalog]);
-
-  const scored = run.summary?.ranked_by === "cer";
-  const rows = run.summary?.leaderboard ?? [];
-
-  const runPoints = useMemo<Point[]>(() => {
-    const value = (r: (typeof rows)[number]) =>
-      xKey === "speed" ? r.seconds_per_page : xKey === "memory" ? r.peak_memory_mb : r.load_seconds;
-    return rows
-      .filter((r) => r.pages_read > 0 && value(r) != null && (scored ? r.accuracy != null : r.mean_confidence != null))
-      .map((r) => ({
-        id: r.model_id,
-        label: shortName(r.name),
-        name: r.name,
-        family: familyOf(r.model_id),
-        x: Math.max(0.01, value(r)!),
-        y: (scored ? r.accuracy! : r.mean_confidence!) * 100,
-        filled: true,
-        best: r.model_id === run.summary?.best_model_id,
-        rows: [
-          ["Accuracy", pct(r.accuracy)],
-          ["WER", pct(r.wer)],
-          ["Per page", secs(r.seconds_per_page)],
-          ["Load", secs(r.load_seconds, 1)],
-          ["Peak RAM", r.peak_memory_mb == null ? "–" : formatMb(r.peak_memory_mb)],
-          ["Confidence", pct(r.mean_confidence)],
-          ["Pages failed", String(r.pages_failed)],
-        ],
-      }));
-  }, [rows, xKey, scored, run.summary?.best_model_id]);
-
-  const refPoints = useMemo<Point[]>(() => {
-    if (!reference || !catalog || source === "run") return [];
-    const inRun = new Set(run.models.map((m) => m.model_id));
-    const max = reference.benchmarks[source === "v1" ? "ocrbench_v1" : "ocrbench_v2"].max;
-    const out: Point[] = [];
-    for (const m of reference.models) {
-      const info = catalog.find((c) => c.id === m.model_id);
-      const score = source === "v1" ? m.scores.ocrbench_v1 : m.scores.ocrbench_v2;
-      const y = source === "v1" ? m.scores.ocrbench_v1?.value : m.scores.ocrbench_v2?.[split];
-      if (!info || !score || y == null) continue;
-      out.push({
-        id: m.model_id,
-        label: `${m.label}${score.self_reported ? " *" : ""}`,
-        name: m.label,
-        family: familyOf(m.model_id),
-        x: info.approx_download_mb,
-        y,
-        filled: info.status === "ready" || inRun.has(m.model_id),
-        best: false,
-        rows: [
-          [source === "v1" ? "OCRBench v1" : `OCRBench v2 ${split.toUpperCase()}`, `${source === "v1" ? y : y.toFixed(1)} / ${max}`],
-          ["Download", formatMb(info.approx_download_mb)],
-          ["Reported by", score.self_reported ? "the model's makers" : "OCRBench leaderboard"],
-          ["Here", info.status === "ready" ? "installed" : "not installed"],
-        ],
-      });
-    }
-    // No "best" and no frontier here: these scores come from different sources (makers'
-    // own reports, the official leaderboard), so ranking them against each other misleads.
-    return out;
-  }, [reference, catalog, source, split, run.models]);
-
-  const points = source === "run" ? runPoints : refPoints;
-  const families = (["paddle", "tesseract", "ollama", "other"] as Family[]).filter((f) => points.some((p) => p.family === f));
-  const refMax = source === "v1" ? 1000 : 100;
-
-  // Models in this run that OCRBench can't place (classic engines, unscored models).
-  const unplaced =
-    source === "run" || !reference
-      ? []
-      : run.models.filter((m) => !refPoints.some((p) => p.id === m.model_id)).map((m) => m.name);
-  const refTableModels = reference?.models.filter((m) => (source === "v1" ? m.scores.ocrbench_v1 : m.scores.ocrbench_v2?.[split] != null)) ?? [];
-
-  return (
-    <section aria-labelledby="graph-label" className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <SectionLabel id="graph-label">Accuracy against cost</SectionLabel>
-        <div className="flex flex-wrap items-center gap-2">
-          <Segmented
-            label="Scores from"
-            value={source}
-            onChange={setSource}
-            options={[
-              { value: "run", label: "This run" },
-              { value: "v1", label: "OCRBench v1" },
-              { value: "v2", label: "OCRBench v2" },
-            ]}
-          />
-          {source === "run" && (
-            <Segmented
-              label="Cost axis"
-              value={xKey}
-              onChange={setXKey}
-              options={(Object.keys(X_AXES) as XKey[]).map((k) => ({ value: k, label: X_AXES[k].short }))}
-            />
-          )}
-          {source === "v2" && (
-            <Segmented
-              label="OCRBench v2 track"
-              value={split}
-              onChange={setSplit}
-              options={[
-                { value: "en", label: "English" },
-                { value: "zh", label: "Chinese" },
-              ]}
-            />
-          )}
-        </div>
-      </div>
-
-      <div className="flex flex-col gap-3 rounded-2xl p-4 ring-1 ring-line ring-inset">
-        {points.length === 0 ? (
-          <p className="py-10 text-center text-sm text-fg-muted">
-            {source === "run"
-              ? run.state === "running" || run.state === "queued"
-                ? "Models appear here as they finish reading."
-                : "No model finished reading, so there's nothing to plot."
-              : reference && catalog
-                ? "No model in DocBox's catalog has a published score on this benchmark."
-                : "Loading the published scores…"}
-          </p>
-        ) : (
-          <>
-            <Legend families={families} hollow={source !== "run" && points.some((p) => !p.filled)} frontier={source === "run"} />
-            <Plot
-              points={points}
-              xLabel={source === "run" ? X_AXES[xKey].label : "Download size"}
-              xFormat={source === "run" ? X_AXES[xKey].unit : mbTick}
-              yLabel={
-                source === "run"
-                  ? scored
-                    ? "Accuracy (1 − character error rate)"
-                    : "Mean confidence (no reference text)"
-                  : source === "v1"
-                    ? "OCRBench v1 score (of 1,000)"
-                    : `OCRBench v2 ${split === "en" ? "English" : "Chinese"} (of 100)`
-              }
-              yFormat={source === "run" ? (v) => `${v}%` : (v) => String(v)}
-              yCap={source === "run" ? 100 : refMax}
-              showFrontier={source === "run"}
-            />
-          </>
-        )}
-
-        {source === "run" && !scored && points.length > 0 && (
-          <p className="text-[13px] text-fg-muted">
-            Without reference text the height is each model's own confidence, which isn't accuracy. Add <code className="text-fg">name.gt.txt</code> files to plot accuracy.
-          </p>
-        )}
-
-        {source !== "run" && reference && (
-          <div className="flex flex-col gap-3 border-t border-line pt-3 text-[13px] text-fg-muted">
-            <p>
-              Published scores for reference, not measured on your files. {reference.benchmarks[source === "v1" ? "ocrbench_v1" : "ocrbench_v2"].about}{" "}
-              * Reported by the model's makers.
-            </p>
-            {unplaced.length > 0 && <p>Not on {source === "v1" ? "OCRBench v1" : "OCRBench v2"}: {unplaced.join(", ")}.</p>}
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left">
-                <caption className="sr-only">Published scores and their sources</caption>
-                <thead>
-                  <tr className="text-xs tracking-[0.3px] uppercase">
-                    <th scope="col" className="py-1.5 pr-3 font-medium">Model</th>
-                    <th scope="col" className="py-1.5 pr-3 text-right font-medium">Score</th>
-                    <th scope="col" className="py-1.5 font-medium">Source</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {refTableModels.map((m) => {
-                    const s = source === "v1" ? m.scores.ocrbench_v1! : m.scores.ocrbench_v2!;
-                    const value = source === "v1" ? m.scores.ocrbench_v1!.value : m.scores.ocrbench_v2![split];
-                    return (
-                      <tr key={m.model_id} className="border-t border-line/70">
-                        <th scope="row" className="py-1.5 pr-3 font-medium text-fg">{m.label}</th>
-                        <td className="py-1.5 pr-3 text-right text-fg tabular-nums">{source === "v1" ? value : value?.toFixed(1)}</td>
-                        <td className="py-1.5">
-                          <a href={s.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-secondary hover:underline">
-                            {s.source}
-                            <ExternalLink aria-hidden="true" className="h-3 w-3" />
-                          </a>
-                          {s.self_reported ? " · self-reported" : ""}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <ul className="flex list-disc flex-col gap-1 pl-4">
-              {reference.notes.map((n) => (
-                <li key={n}>{n}</li>
-              ))}
-            </ul>
-            <p>Scores checked {reference.checked}.</p>
-          </div>
-        )}
-      </div>
-    </section>
   );
 }

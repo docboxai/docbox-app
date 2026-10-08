@@ -124,9 +124,12 @@ computer. The button always tells you what a click will do:
 the models to compare and click **Start benchmark**: every page goes to every model, one
 model at a time. Each run becomes a batch you can open, run again or delete.
 
-The leaderboard shows each model's accuracy, speed per page, load time, peak memory and
-confidence, best values in green. **Compare** puts a page next to every model's reading of
-it, with each mistake ("slip") highlighted. One click makes the winner your default model.
+The leaderboard plots each model's accuracy against what it costs (seconds per page, peak
+memory or load time), cheapest on the right, so the most efficient models sit top right;
+one model's sizes (PaddleOCR Mobile and Large, say) are joined by a line. Below it, ranked
+bars show each model's accuracy with its 95% interval, beside its speed, peak memory and
+load time. **Compare** puts a page next to every model's reading of it, with each mistake
+("slip") highlighted. One click makes the winner your default model.
 
 Accuracy needs the correct text: put `invoice.gt.txt` next to `invoice.pdf` (or
 `invoice.p2.gt.txt` for page 2 only). Without it, models are ranked by speed.

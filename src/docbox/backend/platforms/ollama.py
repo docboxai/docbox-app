@@ -82,11 +82,21 @@ def status() -> dict:
     }
 
 
+def family_and_variant(name: str) -> tuple[str, str | None]:
+    """The tags of one Ollama model are its sizes and quantizations: "qwen2.5vl:7b" is
+    the 7b variant of "Ollama — qwen2.5vl". "latest" names no size, so no variant."""
+    base, _, tag = normalize_model_name(name).partition(":")
+    return f"Ollama — {base}", (None if tag == "latest" else tag)
+
+
 def _spec_for(name: str, size_mb: int, description: str | None = None) -> ModelSpec:
     size_mb = max(1, size_mb)
+    family, variant = family_and_variant(name)
     return ModelSpec(
         id=f"ollama:{name}",
         name=f"Ollama — {name}",
+        family=family,
+        variant=variant,
         engine="ollama",
         description=description or (
             "Vision-language model in your local Ollama install. Runs entirely on your "

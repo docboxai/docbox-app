@@ -13,6 +13,8 @@ from typing import Literal
 from pydantic import BaseModel
 from rapidfuzz.distance import Levenshtein
 
+import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
+from docbox.backend import platforms
 from docbox.benchmark import metrics
 from docbox.benchmark.store import (
     BenchRun,
@@ -24,16 +26,18 @@ from docbox.benchmark.store import (
 from docbox.service.errors import Invalid, NotFound
 
 
-def _model_score(
+def _model_scores(
     by_page: dict[tuple[str, int], PageResult], run: BenchRun, refs: References,
     *, reading: bool = False,
-) -> metrics.Score:
-    """Edits against every reference in the run. A page the model failed counts as read
-    empty, so failing doesn't score better than reading badly. Page references are used
-    for files that have them; otherwise the whole-document reference. While the model is
-    still `reading`, only references for pages it has got to count, so the live leaderboard
+) -> list[metrics.Score]:
+    """Edits against every reference in the run, one score per reference (a page, or a
+    whole document): added up they give the model's error rates, and their spread gives
+    the interval around them. A page the model failed counts as read empty, so failing
+    doesn't score better than reading badly. Page references are used for files that
+    have them; otherwise the whole-document reference. While the model is still
+    `reading`, only references for pages it has got to count, so the live leaderboard
     doesn't score its unread pages as blank."""
-    total = metrics.ZERO
+    units: list[metrics.Score] = []
     for file in run.files:
         def text(page: int, file_id: str = file.id) -> str:
             r = by_page.get((file_id, page))
@@ -45,11 +49,11 @@ def _model_score(
         if file.id in refs.pages:
             for page, ref in refs.pages[file.id].items():
                 if reached(int(page)):
-                    total += metrics.score(text(int(page)), ref, ignore_case=run.ignore_case)
+                    units.append(metrics.score(text(int(page)), ref, ignore_case=run.ignore_case))
         elif file.id in refs.whole and all(reached(p) for p in range(1, file.pages + 1)):
             hyp = "\n\n".join(text(p) for p in range(1, file.pages + 1))
-            total += metrics.score(hyp, refs.whole[file.id], ignore_case=run.ignore_case)
-    return total
+            units.append(metrics.score(hyp, refs.whole[file.id], ignore_case=run.ignore_case))
+    return units
 
 
 def summarize(run: BenchRun, results: list[PageResult], refs: References) -> BenchSummary:
@@ -64,22 +68,31 @@ def summarize(run: BenchRun, results: list[PageResult], refs: References) -> Ben
         ok = [r for r in pages.values() if r.error is None]
         seconds = [r.seconds for r in ok if r.seconds is not None]
         confidences = [ln.confidence for r in ok for ln in r.lines if ln.confidence is not None]
+        engine, family, variant = platforms.describe(model.model_id)
         row = LeaderboardRow(
             model_id=model.model_id,
             name=model.name,
+            engine=engine,
+            family=family,
+            variant=variant,
             pages_read=len(ok),
             pages_failed=len(pages) - len(ok),
             load_seconds=model.load_seconds,
             seconds_per_page=round(statistics.fmean(seconds), 3) if seconds else None,
             median_seconds_per_page=round(statistics.median(seconds), 3) if seconds else None,
             peak_memory_mb=model.peak_memory_mb,
+            memory_note=model.memory_note,
             mean_confidence=round(statistics.fmean(confidences), 4) if confidences else None,
         )
         if scored and ok:
-            s = _model_score(pages, run, refs, reading=model.state == "running")
+            units = _model_scores(pages, run, refs, reading=model.state == "running")
+            s = sum(units, metrics.ZERO)
             if s.ref_chars:
                 row.cer, row.wer = round(s.cer, 4), round(s.wer, 4)
                 row.accuracy = round(max(0.0, 1 - s.cer), 4)
+                margin = metrics.cer_margin(units)
+                row.accuracy_margin = None if margin is None else round(margin, 4)
+                row.scored_units = len(units)
                 row.scored_chars = s.ref_chars
         rows.append(row)
 
@@ -112,6 +125,12 @@ def _num(value: float | None, fmt: str = "{:.2f}", unit: str = "") -> str:
     return "–" if value is None else fmt.format(value) + unit
 
 
+def _accuracy(row: LeaderboardRow) -> str:
+    if row.accuracy is None or row.accuracy_margin is None:
+        return _pct(row.accuracy)
+    return f"{_pct(row.accuracy)} ±{row.accuracy_margin * 100:.1f}"
+
+
 def to_markdown(run: BenchRun) -> str:
     summary = run.summary
     started = time.strftime("%Y-%m-%d %H:%M", time.localtime(run.created_at))
@@ -136,11 +155,14 @@ def to_markdown(run: BenchRun) -> str:
         ]
         for r in summary.leaderboard:
             lines.append(
-                f"| {r.rank or '–'} | {r.name} (`{r.model_id}`) | {_pct(r.accuracy)} "
+                f"| {r.rank or '–'} | {r.name} (`{r.model_id}`) | {_accuracy(r)} "
                 f"| {_pct(r.cer)} | {_pct(r.wer)} | {_num(r.seconds_per_page)} "
                 f"| {_num(r.load_seconds, '{:.1f}')} | {_num(r.peak_memory_mb, '{:.0f}', ' MB')} "
                 f"| {_pct(r.mean_confidence)} | {r.pages_failed} |"
             )
+        if any(r.accuracy_margin is not None for r in summary.leaderboard):
+            lines += ["", ("± is a 95% interval: how much accuracy varies between the pages "
+                           "or documents that have reference text.")]
     problems = [m for m in run.models if m.error]
     if problems:
         lines += ["", "## Problems", ""]

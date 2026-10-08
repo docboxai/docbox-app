@@ -18,6 +18,10 @@ class OCREngine(Protocol):
 
     `device` is threaded through engine factories today only as a forward-compatible
     slot (currently always "cpu"); v1 does not implement GPU acceleration.
+
+    An engine whose model runs in another program's process (Ollama, a cloud API, an
+    engine container) sets the class attribute `runs_in_process = False`: the memory a
+    benchmark measures around it would be DocBox's own, not the model's.
     """
 
     def is_downloaded(self) -> bool: ...
