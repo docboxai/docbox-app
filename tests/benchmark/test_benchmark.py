@@ -373,3 +373,25 @@ def test_worker_events_are_clean_json(fakes, docs) -> None:
     events = [json.loads(line) for line in proc.stdout.splitlines()]
     assert [e["event"] for e in events] == ["loaded", "page", "done"]
     assert "library chatter" in proc.stderr
+
+
+def test_a_worker_stops_when_whoever_started_it_is_gone(fakes, docs) -> None:
+    """The runner keeps a worker's stdin open as a lifeline. When it closes (the app was
+    closed or crashed, the CLI killed), a worker stuck on a page stops instead of reading
+    on for nobody."""
+    job = {"model_id": "fake-hang",
+           "files": [{"id": "invoice.png", "path": str(docs / "invoice.png")}],
+           "lifeline": True}
+    proc = subprocess.Popen([sys.executable, "-m", "docbox.benchmark.worker"],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, text=True, env=os.environ.copy())
+    assert proc.stdin is not None and proc.stdout is not None
+    try:
+        proc.stdin.write(json.dumps(job) + "\n")
+        proc.stdin.flush()
+        assert json.loads(proc.stdout.readline())["event"] == "loaded"  # now stuck on a page
+        proc.stdin.close()
+        assert proc.wait(timeout=20) != 0
+    finally:
+        if proc.poll() is None:
+            proc.kill()

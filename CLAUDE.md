@@ -13,8 +13,9 @@ Three-part architecture, distributed as installers via GitHub Releases:
 - **Frontend**: Tauri (Rust) native shell (`src-tauri/`) hosting a React + TypeScript +
   Tailwind CSS UI (`frontend/`).
 - **Backend**: a local FastAPI + uvicorn server (`src/docbox/backend/`), spawned by the
-  Tauri shell as a child process (a venv's `python -m docbox.backend.main`) and killed
-  with its whole process tree on exit. The webview talks to it over
+  Tauri shell as a child process (a venv's `python -m docbox.backend.main`) and stopped
+  with its whole process tree on exit; it also exits by itself if the shell dies first
+  (see "Child processes never outlive the app"). The webview talks to it over
   `http://127.0.0.1:<port>`; the frontend polls the `backend_status` Tauri command until
   it's up, then gets the URL from `backend_base_url` (`src-tauri/src/main.rs`).
 - **Models**: registered against a `ModelSpec`/`OCREngine` abstraction
@@ -219,6 +220,21 @@ Child processes (the bootstrap `uv`, the backend) go through `outside_appimage` 
 `main.rs`: the AppImage launcher's PYTHONHOME/PYTHONPATH/LD_LIBRARY_PATH point into its
 mount and would break the managed Python.
 
+### Child processes never outlive the app
+
+- **Lifeline:** the shell starts the backend with `--exit-on-stdin-close` and a piped stdin
+  it never writes to (`Backend::lifeline`). When that pipe closes (the shell drops it on
+  exit, or the OS closes it because the shell crashed or was force-quit), the backend stops
+  its own children (`stop_children`: engine installs, benchmark workers), asks uvicorn to
+  shut down, and hard-exits after a few seconds if that hangs. A backend run by hand or in
+  Docker has no flag and ignores stdin.
+- **Process groups:** on Unix the backend and the bootstrap `uv` each lead their own process
+  group, so `stop_child`/`kill_tree` SIGTERM the whole group and SIGKILL what's left after a
+  grace period. Windows uses `taskkill /T /F`, which also reaches past the venv's
+  `python.exe` launcher.
+- **Benchmark workers:** they get the same kind of lifeline from whoever runs the benchmark
+  (the app's backend, the CLI, the MCP server). See Benchmarks below.
+
 ### The service layer: one implementation behind the app, the CLI and MCP
 
 `src/docbox/service/` holds the operations (models, engines, device, settings, reading
@@ -252,8 +268,9 @@ in-process with `docbox.cli.main.main(argv)`.
 `runner.create()` checks the dataset (`dataset.py`: files/folders with `.gt.txt` /
 `.pN.gt.txt` sidecars, or a `.json`/`.jsonl` manifest) and models up front and saves a
 queued run; `runner.execute()` then runs each model **in its own worker process**
-(`python -m docbox.benchmark.worker`, JSON job on stdin, one JSON event per line on a
-private copy of stdout; libraries' own prints are moved to stderr) — for honest peak memory
+(`python -m docbox.benchmark.worker`; the JSON job is one line on stdin, which the runner
+keeps open as a lifeline, so a worker exits when whoever started it is gone; one JSON
+event per line on a private copy of stdout; libraries' own prints are moved to stderr) — for honest peak memory
 (psutil, sampled by the parent), crash/hang isolation (per-page timeout) and so native libs
 never load in the backend. Runs live in `<data>/benchmarks/<run_id>/` (`store.py`); only the
 running process writes them, a `cancel` file stops them from any process, and a running run
