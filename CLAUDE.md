@@ -272,7 +272,9 @@ Tests use fake engines in `tests/benchmark/bench_fakes.py`, loaded into workers 
 1.x `FastMCP`). Tools are plain sync functions over `service/` (the SDK runs them on worker
 threads and diverts stray stdout writes, so a chatty OCR library can't corrupt the
 protocol); `ServiceError`s become `ToolError("<code>: <detail>")`. Long work returns an id
-to poll (`install_model` → `get_install_status`, `start_benchmark` → `get_benchmark`). Mark
+to poll (`install_model` → `get_install_status`, `start_benchmark` → `get_benchmark`,
+`start_read` → `get_read`; `read_file` refuses documents over 5 pages). Text comes back
+in whole pages within `max_chars` (`next_page` continues). Mark
 new tools with the right `ToolAnnotations` (`_DELETES` for anything that removes files).
 `docs/agents.md` is the user-facing guide; keep it in step with the tool list.
 `DOCBOX_PRELOAD` (`docbox/plugins.py`) imports extra model-registering modules in every
@@ -327,6 +329,27 @@ at startup. `/api/ocr/run` (one page, answered directly) stays as the contract
 `RemoteEngine` speaks to engine containers. Open-file/folder actions only take a read id,
 never a path. `OcrLine.box` carries line positions from engines that report them
 (PaddleOCR, Tesseract, EasyOCR) so the PDF text lines up with the scan.
+
+PDFium (pypdfium2) isn't thread-safe and two threads in it at once crash the process, while
+the reader thread, `/api/ocr/run` and MCP tools all open PDFs. Keep every PDFium call in
+`core/pages.py`, holding `_PDFIUM_LOCK`, and close pages and bitmaps there rather than leaving
+them to finalizers (`tests/backend/test_pdf_threads.py`).
+
+Engines are kept loaded between reads (`core/engine_cache.py`): reads and `/api/ocr/run` take
+the model's engine through `engine_cache.loaded(spec)`, which loads it once, keeps one
+engine (LRU), serializes runs on it with a per-engine lock and drops it after
+`DOCBOX_ENGINE_IDLE_S` (default 300 s, 0 = never). Anything that deletes model files calls
+`engine_cache.evict()` first (it waits for a read in progress). The benchmark worker never
+uses it: a fresh process per model keeps its load and memory numbers honest.
+
+Reads take a PDF page's own text instead of OCRing it (`pages.iter_read_pages`,
+`ReadPage.source = "pdf_text"`) when it has at least `_MIN_TEXT_CHARS` of text, isn't
+rotated, and images cover at most `_MAX_IMAGE_COVER` of it (scans are OCRed again, even
+with an older OCR layer). Its lines come from pdfium's text rectangles, boxed in the
+rendered page's pixels so a searchable PDF lines up. The model is loaded only at the first
+page that needs OCR. `use_pdf_text=False` (reads API form field, the Read a file switch,
+`docbox read --ocr-all`, MCP `use_pdf_text`) OCRs every page; benchmarks always do
+(`iter_pages`).
 
 `core/config_store.py` also holds the default model, the output folder and the cloud
 switch (`/api/settings`). With the switch off, NVIDIA NIM models are hidden and refused

@@ -7,6 +7,7 @@ import os
 import sys
 import time
 
+import anyio
 import pytest
 from mcp.client.client import Client
 from mcp.client.stdio import StdioServerParameters
@@ -37,10 +38,11 @@ async def call_error(client: Client, tool: str, **args) -> str:
 async def test_tools_are_listed_with_annotations() -> None:
     async with Client(server) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
-    assert {"get_device", "list_models", "install_model", "read_file", "start_benchmark",
-            "get_benchmark", "get_benchmark_page", "remove_model"} <= set(tools)
+    assert {"get_device", "list_models", "install_model", "read_file", "start_read", "get_read",
+            "start_benchmark", "get_benchmark", "get_benchmark_page", "remove_model"} <= set(tools)
     assert tools["remove_model"].annotations.destructive_hint is True
     assert tools["list_models"].annotations.read_only_hint is True
+    assert tools["get_read"].annotations.read_only_hint is True
     assert tools["get_benchmark"].output_schema is not None
 
 
@@ -143,3 +145,59 @@ async def test_over_stdio_with_a_noisy_engine(installed_fake, sample_image, data
         assert read["text"] == "hi"
         device = await call(client, "get_device")
         assert device["data_dir"] == str(data_dir)
+
+
+async def _read_done(client: Client, read_id: str) -> dict:
+    deadline = time.monotonic() + 20
+    while True:
+        status = await call(client, "get_read", read_id=read_id)
+        if status["state"] in ("done", "error", "cancelled"):
+            return status
+        assert time.monotonic() < deadline, status
+        await anyio.sleep(0.05)
+
+
+async def test_long_documents_are_read_in_the_background_and_paged(installed_fake, tmp_path):
+    from tests.pdf_samples import Page, make_pdf
+
+    # Seven pages of about 500 characters each, carrying their own text.
+    lines = [f"Line {i:02d} of the quarterly report, exported as-is" for i in range(10)]
+    pdf = tmp_path / "report.pdf"
+    pdf.write_bytes(make_pdf([Page(lines=lines) for _ in range(7)]))
+
+    async with Client(server) as client:
+        refused = await call_error(client, "read_file", path=str(pdf), model_id="test-fake")
+        assert "7 pages" in refused and "start_read" in refused
+
+        started = await call(client, "start_read", path=str(pdf), model_id="test-fake")
+        assert started["pages"] == [] and started["read_id"]
+        status = await _read_done(client, started["read_id"])
+        assert status["state"] == "done" and status["pages_total"] == 7
+        assert [p["page"] for p in status["pages"]] == [1, 2, 3, 4, 5, 6, 7]
+        assert {p["source"] for p in status["pages"]} == {"pdf_text"}
+        assert status["next_page"] is None and status["output_path"].endswith("report.txt")
+
+        first = await call(client, "get_read", read_id=started["read_id"], max_chars=1000)
+        assert [p["page"] for p in first["pages"]] == [1, 2] and first["next_page"] == 3
+        rest = await call(client, "get_read", read_id=started["read_id"], from_page=7,
+                          max_chars=1000)
+        assert [p["page"] for p in rest["pages"]] == [7] and rest["next_page"] is None
+
+        assert "not_found" in await call_error(client, "get_read", read_id="nope")
+        assert "from_page" in await call_error(client, "get_read", read_id=started["read_id"],
+                                               from_page=0)
+
+
+async def test_read_file_returns_at_most_max_chars(installed_fake, tmp_path):
+    from tests.pdf_samples import Page, make_pdf
+
+    long_page = [f"Row {i:02d}: a long line of a long statement, exported with its text"
+                 for i in range(30)]
+    pdf = tmp_path / "statement.pdf"
+    pdf.write_bytes(make_pdf([Page(lines=long_page), Page(lines=long_page)]))
+    async with Client(server) as client:
+        read = await call(client, "read_file", path=str(pdf), model_id="test-fake",
+                          max_chars=1000)
+    [page] = read["pages"]
+    assert page["truncated"] is True and len(page["text"]) == 1000
+    assert read["next_page"] == 2 and read["read_id"]

@@ -8,7 +8,7 @@ from collections.abc import Callable
 
 import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
 from docbox.backend import platforms
-from docbox.backend.core import locks, prerequisites, runtime
+from docbox.backend.core import engine_cache, locks, prerequisites, runtime
 from docbox.backend.core.device import get_device_capabilities
 from docbox.backend.core.jobs import DownloadJob, JobPaused, job_store
 from docbox.backend.core.registry import ModelSpec, check_fit, recommend, registry
@@ -251,6 +251,9 @@ def remove_model(model_id: str) -> None:
         raise Conflict(f"{spec.name} is being installed by another DocBox window") from None
     try:
         job_store.discard_paused(model_id)
+        # A read using the model finishes first; then its loaded engine is let go before
+        # its files are.
+        engine_cache.evict(spec.id)
         spec.engine_factory().delete()
     except NotDeletableError as exc:
         raise Invalid(str(exc)) from None

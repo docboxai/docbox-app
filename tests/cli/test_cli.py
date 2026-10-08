@@ -163,3 +163,20 @@ def test_json_output_stays_clean_when_an_engine_prints(fakes, tmp_path) -> None:
     assert "library chatter" not in proc.stdout
     assert "library chatter" in proc.stderr
     assert result
+
+
+def test_read_takes_a_pdfs_own_text_unless_told_to_ocr_all(capsys, installed_fake, tmp_path):
+    from tests.pdf_samples import INVOICE, Page, make_pdf
+
+    pdf = tmp_path / "exported.pdf"
+    pdf.write_bytes(make_pdf([Page(lines=INVOICE)]))
+    code, body, _ = run_json(capsys, "read", str(pdf), "-m", FAKE, "--out", str(tmp_path / "a"))
+    assert code == 0
+    [page] = body["files"][0]["pages"]
+    assert page == {"page": 1, "text": "\n".join(INVOICE), "source": "pdf_text"}
+
+    code, body, _ = run_json(
+        capsys, "read", str(pdf), "-m", FAKE, "--ocr-all", "--out", str(tmp_path / "b"))
+    assert code == 0
+    [page] = body["files"][0]["pages"]
+    assert page["source"] == "ocr" and page["text"].startswith("Total due")

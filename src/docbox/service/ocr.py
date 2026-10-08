@@ -1,5 +1,6 @@
-"""Reading files from disk, for front ends that wait for the answer (the CLI and the MCP
-server). Reads are recorded in history like reads from the app, so they show under
+"""Reading files from disk, for the CLI and the MCP server: on the calling thread for
+front ends that wait for the answer, or in the background (start_read, then get_read) for
+long documents. Reads are recorded in history like reads from the app, so they show under
 Recent files."""
 
 from __future__ import annotations
@@ -10,9 +11,10 @@ from pathlib import Path
 
 import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
 from docbox.backend.core import history, reader
+from docbox.backend.core.pages import PageError, count_pages
 from docbox.backend.core.registry import ModelSpec
 from docbox.backend.engines.remote_engine import EngineServiceError
-from docbox.backend.schemas import OutputFormat, ReadDetail
+from docbox.backend.schemas import OutputFormat, ReadDetail, ReadSummary
 from docbox.service.errors import (
     Blocked,
     Conflict,
@@ -78,28 +80,70 @@ def collect_files(paths: Iterable[str | Path], *, recursive: bool = False) -> li
     return unique
 
 
-def read_file(
-    path: str | Path, model_id: str, fmt: OutputFormat = "txt", out_dir: Path | None = None,
-) -> ReadDetail:
-    """Read every page of one file with one model and save the text, like Read a file in
-    the app. Raises when the model can't run or the read fails."""
+def _existing_file(path: str | Path) -> Path:
     path = Path(path).expanduser()
     if not path.is_file():
         raise NotFound(f"No such file: {path}")
-    return _read_checked(path, check_runnable(model_id), fmt, out_dir)
+    return path
+
+
+def _file_bytes(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise Invalid(f"Can't read {path}: {exc}") from None
+
+
+def page_count(path: str | Path) -> int:
+    """How many pages a read of this file goes through (1 for most images)."""
+    path = _existing_file(path)
+    try:
+        return count_pages(_file_bytes(path), mimetypes.guess_type(path.name)[0], path.name)
+    except PageError as exc:
+        raise Invalid(str(exc)) from None
+
+
+def read_file(
+    path: str | Path, model_id: str, fmt: OutputFormat = "txt", out_dir: Path | None = None,
+    *, use_pdf_text: bool = True,
+) -> ReadDetail:
+    """Read every page of one file with one model and save the text, like Read a file in
+    the app. Raises when the model can't run or the read fails. `use_pdf_text=False`
+    OCRs PDF pages that carry their own text too."""
+    path = _existing_file(path)
+    return _read_checked(path, check_runnable(model_id), fmt, out_dir, use_pdf_text)
+
+
+def start_read(
+    path: str | Path, model_id: str, fmt: OutputFormat = "txt", *, use_pdf_text: bool = True,
+) -> ReadSummary:
+    """Start reading one file in the background, in this process, and return its history
+    entry at once; follow it with get_read(). For documents too long to wait for."""
+    path = _existing_file(path)
+    spec = check_runnable(model_id)
+    return reader.submit(
+        file_name=path.name, data=_file_bytes(path),
+        content_type=mimetypes.guess_type(path.name)[0], spec=spec, output_format=fmt,
+        use_pdf_text=use_pdf_text,
+    )
+
+
+def get_read(read_id: str) -> ReadDetail:
+    """A read's state and, once it's done, its pages."""
+    detail = history.get_detail(read_id)
+    if detail is None:
+        raise NotFound(f"Unknown read: {read_id}")
+    return detail
 
 
 def _read_checked(
-    path: Path, spec: ModelSpec, fmt: OutputFormat, out_dir: Path | None,
+    path: Path, spec: ModelSpec, fmt: OutputFormat, out_dir: Path | None, use_pdf_text: bool,
 ) -> ReadDetail:
-    try:
-        data = path.read_bytes()
-    except OSError as exc:
-        raise Invalid(f"Can't read {path}: {exc}") from None
+    data = _file_bytes(path)
     content_type = mimetypes.guess_type(path.name)[0]
     read_id = reader.read_now(
         file_name=path.name, data=data, content_type=content_type, spec=spec,
-        output_format=fmt, out_dir=out_dir,
+        output_format=fmt, out_dir=out_dir, use_pdf_text=use_pdf_text,
     )
     detail = history.get_detail(read_id)
     if detail is None:  # pushed out of history by 200 newer reads in the meantime
@@ -111,9 +155,11 @@ def _read_checked(
 
 def read_files(
     paths: Iterable[Path], model_id: str, fmt: OutputFormat = "txt", out_dir: Path | None = None,
+    *, use_pdf_text: bool = True,
 ) -> Iterator[tuple[Path, ReadDetail | ServiceError]]:
     """Each file's read, or the error that stopped it; one bad file doesn't stop the rest
-    (but a model that can't run at all stops them all, raised before the first file)."""
+    (but a model that can't run at all stops them all, raised before the first file). The
+    model is loaded once for the whole batch and kept for the next file."""
     # Checked once for the whole batch (for Ollama that's a request to its server); the
     # reader still confirms the weights are there before each file.
     spec = check_runnable(model_id)
@@ -122,6 +168,6 @@ def read_files(
         try:
             if not path.is_file():
                 raise NotFound(f"No such file: {path}")
-            yield path, _read_checked(path, spec, fmt, out_dir)
+            yield path, _read_checked(path, spec, fmt, out_dir, use_pdf_text)
         except (Failed, Invalid, NotFound) as exc:
             yield path, exc

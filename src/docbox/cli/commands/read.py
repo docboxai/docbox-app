@@ -27,6 +27,9 @@ def register(sub, common) -> None:
                    help="also print the text (people mode)")
     p.add_argument("--lines", action="store_true",
                    help="with --json, include each line's confidence and position")
+    p.add_argument("--ocr-all", action="store_true",
+                   help="read every PDF page with the model, even pages that already "
+                        "carry their own text (by default that text is used as-is)")
     p.set_defaults(func=_read)
 
 
@@ -34,7 +37,8 @@ def _jsonable(path: Path, result: ReadDetail | ServiceError, with_lines: bool) -
     if isinstance(result, ServiceError):
         return {"file": str(path), "error": {"code": result.code, "detail": result.detail}}
     pages = [
-        {"page": i, "text": p.text, **({"lines": p.lines} if with_lines else {})}
+        {"page": i, "text": p.text, "source": p.source,
+         **({"lines": p.lines} if with_lines else {})}
         for i, p in enumerate(result.pages, start=1)
     ]
     return {
@@ -54,7 +58,8 @@ def _read(args, out: Output) -> int:
     results = []
     failed = 0
     for n, (path, result) in enumerate(
-        ocr.read_files(files, model_id, args.format, args.out), start=1
+        ocr.read_files(files, model_id, args.format, args.out, use_pdf_text=not args.ocr_all),
+        start=1,
     ):
         out.end_progress()
         if isinstance(result, ServiceError):
@@ -63,8 +68,10 @@ def _read(args, out: Output) -> int:
                 print(f"✗ {path}: {result.detail}")
         elif not out.json:
             pages = len(result.pages)
+            own = sum(p.source == "pdf_text" for p in result.pages)
+            note = f", {own} from the PDF's own text" if own else ""
             print(f"✓ {path} → {result.output_path} "
-                  f"({pages} page{'s' if pages != 1 else ''}, {result.seconds:.1f} s)")
+                  f"({pages} page{'s' if pages != 1 else ''}, {result.seconds:.1f} s{note})")
             if args.print_text:
                 print(result.text.rstrip() + "\n")
         results.append(_jsonable(path, result, args.lines))

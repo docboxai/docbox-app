@@ -10,7 +10,7 @@ from pathlib import Path
 from filelock import Timeout
 
 import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
-from docbox.backend.core import runtime
+from docbox.backend.core import engine_cache, runtime
 from docbox.backend.core.jobs import job_store
 from docbox.backend.core.locks import model_lock
 from docbox.backend.core.paths import get_data_dir, get_models_dir
@@ -98,6 +98,7 @@ def remove_engine(extra: str) -> EngineRemoveResult:
                     f"{spec.name} is being installed by another DocBox process; wait for it."
                 ) from None
             held.callback(lock.release)
+        engine_cache.evict_all({spec.id for spec in specs})
         for d in _model_dirs(extra):
             shutil.rmtree(d, ignore_errors=True)
 

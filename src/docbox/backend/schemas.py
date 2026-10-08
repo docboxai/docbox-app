@@ -184,6 +184,8 @@ class ReadSummary(BaseModel):
 class ReadPage(BaseModel):
     lines: list[OcrLine]
     text: str
+    # "pdf_text": the PDF page carried its own text, used as-is instead of OCR.
+    source: Literal["ocr", "pdf_text"] = "ocr"
 
 
 class ReadDetail(ReadSummary):

@@ -1,6 +1,7 @@
 """Reading whole files in the background: every page, one file at a time, saving the text
 in the format the user picked. Files are read one at a time because OCR is CPU-heavy
-and two at once would only make both slower."""
+and two at once would only make both slower. The model stays loaded between files
+(`engine_cache`), and PDF pages that carry their own text skip OCR (`pages.iter_read_pages`)."""
 
 from __future__ import annotations
 
@@ -9,12 +10,13 @@ import queue
 import re
 import threading
 import time
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
 from docbox.backend import platforms
-from docbox.backend.core import config_store, history, prerequisites, runtime
-from docbox.backend.core.pages import PageError, count_pages, iter_pages
+from docbox.backend.core import config_store, engine_cache, history, prerequisites, runtime
+from docbox.backend.core.pages import PageError, count_pages, iter_read_pages
 from docbox.backend.core.pdf_writer import PdfPage, write_searchable_pdf
 from docbox.backend.core.registry import ModelSpec
 from docbox.backend.engines.remote_engine import EngineServiceError
@@ -57,6 +59,8 @@ class _Job:
     output_format: OutputFormat
     # Where to save the output; None: the output folder from settings.
     out_dir: Path | None = None
+    # Take a PDF page's own text when it has some, instead of OCRing it.
+    use_pdf_text: bool = True
 
 
 _queue: queue.Queue[_Job] = queue.Queue()
@@ -68,23 +72,25 @@ _worker_lock = threading.Lock()
 
 def submit(
     *, file_name: str, data: bytes, content_type: str | None, spec: ModelSpec,
-    output_format: OutputFormat,
+    output_format: OutputFormat, use_pdf_text: bool = True,
 ):
     entry = history.create(file_name, spec.id, spec.name, output_format)
-    _queue.put(_Job(entry.id, spec.id, data, content_type, file_name, output_format))
+    _queue.put(_Job(entry.id, spec.id, data, content_type, file_name, output_format,
+                    use_pdf_text=use_pdf_text))
     _ensure_worker()
     return entry
 
 
 def read_now(
     *, file_name: str, data: bytes, content_type: str | None, spec: ModelSpec,
-    output_format: OutputFormat, out_dir: Path | None = None,
+    output_format: OutputFormat, out_dir: Path | None = None, use_pdf_text: bool = True,
 ) -> str:
     """Read one file on the calling thread (the CLI and the MCP server, which wait for the
     answer) and return its read id. It is recorded in history like a read from the app;
     errors end up in its history entry, not raised."""
     entry = history.create(file_name, spec.id, spec.name, output_format)
-    job = _Job(entry.id, spec.id, data, content_type, file_name, output_format, out_dir)
+    job = _Job(entry.id, spec.id, data, content_type, file_name, output_format, out_dir,
+               use_pdf_text)
     try:
         _read(job)
     except KeyboardInterrupt:
@@ -139,22 +145,34 @@ def _read(job: _Job) -> None:
         return
     history.update(job.read_id, state="reading", pages_total=total, pages_done=0)
 
-    engine = spec.engine_factory()
     pages: list[ReadPage] = []
     pdf_pages: list[PdfPage] = []
     try:
-        if not engine.is_downloaded():
-            raise NotRunnable(409, f"{spec.name} is not downloaded yet")
-        engine.load()
-        for index, page in enumerate(iter_pages(job.data, job.content_type, job.file_name)):
-            if _is_cancelled(job.read_id):
-                history.update(job.read_id, state="cancelled")
-                return
-            result = engine.run(page.image)
-            pages.append(ReadPage(lines=result.lines, text=result.text))
-            if job.output_format == "pdf":
-                pdf_pages.append(PdfPage(page.image, page.dpi, result.lines))
-            history.update(job.read_id, pages_done=index + 1)
+        with ExitStack() as using:
+            engine = None
+            for index, page in enumerate(iter_read_pages(
+                job.data, job.content_type, job.file_name,
+                use_pdf_text=job.use_pdf_text, keep_images=job.output_format == "pdf",
+            )):
+                if _is_cancelled(job.read_id):
+                    history.update(job.read_id, state="cancelled")
+                    return
+                if page.lines is not None:
+                    read = ReadPage(lines=page.lines, text=page.text, source="pdf_text")
+                else:
+                    # The model is loaded (or taken warm from the last read) at the first
+                    # page that needs OCR: a PDF that carries all its text never loads one.
+                    if engine is None:
+                        engine = using.enter_context(engine_cache.loaded(spec))
+                    result = engine.run(page.image)
+                    read = ReadPage(lines=result.lines, text=result.text)
+                pages.append(read)
+                if job.output_format == "pdf":
+                    pdf_pages.append(PdfPage(page.image, page.dpi, read.lines))
+                history.update(job.read_id, pages_done=index + 1)
+    except engine_cache.NotDownloaded as exc:
+        history.update(job.read_id, state="error", error=str(exc))
+        return
     except (NotRunnable, EngineServiceError) as exc:
         history.update(job.read_id, state="error", error=exc.detail)
         return

@@ -98,7 +98,10 @@ Go to **Read a file** and drop images or PDFs onto the box, click **Choose files
 **Paste from clipboard** (Ctrl+V works too). Pick a model and how to save the text:
 **Plain text**, **Markdown**, a **Searchable PDF** (your scan with selectable text) or
 **JSON**. Then click **Read text**. DocBox reads every page, one file at a time, and saves
-the result to a `DocBox` folder in your Documents.
+the result to a `DocBox` folder in your Documents. PDF pages that already contain text (an
+exported invoice, a report saved from Word) use that text as-is, which is instant and exact;
+switch off **Use text already in PDFs** to read every page with the model. The model stays
+loaded for a few minutes after a read, so the next file starts right away.
 
 Finished files appear under **Recent files**. Click one to see each line with a
 confidence bar, copy the text, or open the saved file. The model you mark as
@@ -284,6 +287,7 @@ docbox device                                    # memory, processor, disk, data
 docbox models list --fits                        # what runs well here
 docbox models install paddleocr-mobile-en        # engine + model, one step
 docbox read scans/ --model paddleocr-mobile-en --format md --recursive
+docbox read report.pdf --ocr-all                 # OCR pages that already carry text too
 docbox settings set default-model paddleocr-mobile-en
 ```
 
