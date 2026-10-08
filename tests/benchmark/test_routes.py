@@ -91,6 +91,18 @@ def test_bad_start_leaves_no_folder(fakes) -> None:
     assert set(store.root().iterdir()) == before
 
 
+def test_a_bad_name_late_in_the_upload_leaves_no_folder(fakes) -> None:
+    client = _client()
+    before = set(store.root().iterdir())
+    resp = client.post("/api/benchmarks", files=[
+        ("files", ("Invoices/a.png", _png(1, fakes), "image/png")),
+        ("files", ("Invoices/b.png", _png(2, fakes), "image/png")),
+        ("files", ("../ /..", _png(1, fakes), "image/png")),  # sanitises to nothing
+    ])
+    assert resp.status_code == 400
+    assert set(store.root().iterdir()) == before
+
+
 def test_rerun_cancel_and_delete(fakes) -> None:
     client = _client()
     run = _wait(client, _start(client, fakes)["id"])

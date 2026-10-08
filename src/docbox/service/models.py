@@ -213,7 +213,6 @@ def start_install(
     install_status(). A second start while one is running rejoins that job; starting a
     paused one resumes it. `run_in_background` defaults to a new daemon thread (the HTTP
     route passes FastAPI's background tasks instead)."""
-    resolve(model_id)
     active = job_store.active_for(model_id)
     if active is not None:
         return job_status(active)

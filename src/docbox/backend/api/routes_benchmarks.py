@@ -45,26 +45,28 @@ def start_benchmark(
     name: str = Form(""),
     ignore_case: bool = Form(False),
 ) -> BenchRun:
-    run_id = store.new_id()
-    inputs = store.inputs_dir(run_id)
-    tops: set[str] = set()
-    for f in files:
-        rel = _relative_upload_path(f.filename or "document")
-        tops.add(rel.parts[0] if len(rel.parts) > 1 else "")
-        target = inputs.joinpath(*rel.parts)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(f.file.read())
+    # Every name is checked before anything is written, and the run's folder goes again if
+    # anything after that fails (a write error, a refused model), so a failed start never
+    # leaves files behind that no listing shows.
+    placed = [(f, _relative_upload_path(f.filename or "document")) for f in files]
+    tops = {rel.parts[0] if len(rel.parts) > 1 else "" for _f, rel in placed}
     # One dropped folder names the run after itself.
     folder_name = next(iter(tops)) if len(tops) == 1 else ""
-    config = service.BenchConfig(
-        sources=[inputs], models=[m for m in model_ids.split(",") if m.strip()],
-        name=name.strip() or folder_name or None, recursive=True, ignore_case=ignore_case,
-        source="app", run_id=run_id,
-    )
+    run_id = store.new_id()
     try:
+        inputs = store.inputs_dir(run_id)
+        for f, rel in placed:
+            target = inputs.joinpath(*rel.parts)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(f.file.read())
+        config = service.BenchConfig(
+            sources=[inputs], models=[m for m in model_ids.split(",") if m.strip()],
+            name=name.strip() or folder_name or None, recursive=True, ignore_case=ignore_case,
+            source="app", run_id=run_id,
+        )
         with http_errors():
             return service.start(config)
-    except HTTPException:
+    except BaseException:
         store.delete_folder(run_id)
         raise
 

@@ -111,6 +111,29 @@ def test_settings_updates_keep_each_other(data_dir) -> None:
     assert config_store.cloud_enabled() is True
 
 
+def test_removing_an_engine_waits_for_another_process_installing_its_model(data_dir, monkeypatch):
+    from docbox.service import engines as service_engines
+
+    removed: list[Path] = []
+    monkeypatch.setattr(service_engines, "_model_dirs", lambda extra: removed.append(extra) or [])
+    monkeypatch.setattr(runtime, "extra_installed", lambda name: False)
+    ctx = multiprocessing.get_context("spawn")
+    ready, release = ctx.Event(), ctx.Event()
+    child = ctx.Process(target=_hold_model_lock,
+                        args=(str(data_dir), "paddleocr-mobile-en", ready, release))
+    child.start()
+    try:
+        assert ready.wait(20)
+        with pytest.raises(Conflict, match="another DocBox process"):
+            service_engines.remove_engine("paddle")
+        assert removed == []  # nothing deleted while it was installing
+    finally:
+        release.set()
+        child.join(10)
+    assert service_engines.remove_engine("paddle").removed
+    assert removed == ["paddle"]
+
+
 def test_model_lock_names_are_safe(data_dir) -> None:
     lock = locks.model_lock("ollama:qwen2.5vl:3b/../x")
     assert Path(lock.lock_file).parent == data_dir / "locks"
@@ -146,6 +169,20 @@ def test_tool_mode_install_runs_pip_not_sync(monkeypatch) -> None:
     monkeypatch.setattr(runtime, "_write_state", lambda **_: None)
     runtime.ensure_extra("easyocr", lambda *_: None)
     assert ran[0][1:3] == ["pip", "install"]
+
+
+@pytest.mark.parametrize("mode", ["tool", "dev"])
+def test_only_the_managed_app_writes_its_runtime_state(monkeypatch, data_dir, mode) -> None:
+    """The CLI and MCP server share the app's data dir but not its Python: their engine
+    installs must not rewrite the state.json the app re-syncs its env from."""
+    monkeypatch.setenv("DOCBOX_RUNTIME_MODE", "managed")
+    runtime._write_state(extras=["paddle"], resync_pending=True)
+    before = runtime._state_path().read_text(encoding="utf-8")
+
+    monkeypatch.setenv("DOCBOX_RUNTIME_MODE", mode)
+    assert runtime.read_state() == {}
+    runtime._write_state(extras=[], resync_pending=False)
+    assert runtime._state_path().read_text(encoding="utf-8") == before
 
 
 @pytest.mark.skipif(shutil.which("uv") is None, reason="needs uv")

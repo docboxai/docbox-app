@@ -25,21 +25,28 @@ from docbox.service.errors import Invalid, NotFound
 
 
 def _model_score(
-    model_id: str, by_page: dict[tuple[str, int], PageResult], run: BenchRun, refs: References,
+    by_page: dict[tuple[str, int], PageResult], run: BenchRun, refs: References,
+    *, reading: bool = False,
 ) -> metrics.Score:
     """Edits against every reference in the run. A page the model failed counts as read
     empty, so failing doesn't score better than reading badly. Page references are used
-    for files that have them; otherwise the whole-document reference."""
+    for files that have them; otherwise the whole-document reference. While the model is
+    still `reading`, only references for pages it has got to count, so the live leaderboard
+    doesn't score its unread pages as blank."""
     total = metrics.ZERO
     for file in run.files:
         def text(page: int, file_id: str = file.id) -> str:
             r = by_page.get((file_id, page))
             return r.text if r is not None and r.error is None else ""
 
+        def reached(page: int, file_id: str = file.id) -> bool:
+            return not reading or (file_id, page) in by_page
+
         if file.id in refs.pages:
             for page, ref in refs.pages[file.id].items():
-                total += metrics.score(text(int(page)), ref, ignore_case=run.ignore_case)
-        elif file.id in refs.whole:
+                if reached(int(page)):
+                    total += metrics.score(text(int(page)), ref, ignore_case=run.ignore_case)
+        elif file.id in refs.whole and all(reached(p) for p in range(1, file.pages + 1)):
             hyp = "\n\n".join(text(p) for p in range(1, file.pages + 1))
             total += metrics.score(hyp, refs.whole[file.id], ignore_case=run.ignore_case)
     return total
@@ -69,15 +76,19 @@ def summarize(run: BenchRun, results: list[PageResult], refs: References) -> Ben
             mean_confidence=round(statistics.fmean(confidences), 4) if confidences else None,
         )
         if scored and ok:
-            s = _model_score(model.model_id, pages, run, refs)
-            row.cer, row.wer = round(s.cer, 4), round(s.wer, 4)
-            row.accuracy = round(max(0.0, 1 - s.cer), 4)
-            row.scored_chars = s.ref_chars
+            s = _model_score(pages, run, refs, reading=model.state == "running")
+            if s.ref_chars:
+                row.cer, row.wer = round(s.cer, 4), round(s.wer, 4)
+                row.accuracy = round(max(0.0, 1 - s.cer), 4)
+                row.scored_chars = s.ref_chars
         rows.append(row)
 
     def key(row: LeaderboardRow):
         speed = row.seconds_per_page if row.seconds_per_page is not None else float("inf")
-        return (row.cer, speed) if scored else (speed,)
+        # A model with nothing scored yet (still reading towards its first reference)
+        # goes after the scored ones.
+        cer = row.cer if row.cer is not None else float("inf")
+        return (cer, speed) if scored else (speed,)
 
     ranked = sorted((r for r in rows if r.pages_read), key=key)
     for n, row in enumerate(ranked, start=1):

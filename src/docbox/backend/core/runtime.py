@@ -127,6 +127,8 @@ def _state_path() -> Path:
 
 
 def read_state() -> dict:
+    if not _managed():  # see _write_state
+        return {}
     try:
         return json.loads(_state_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -134,6 +136,11 @@ def read_state() -> dict:
 
 
 def _write_state(**updates) -> None:
+    # state.json describes the installed app's managed env, which the Tauri shell re-syncs
+    # from it. A CLI, MCP server or dev backend shares the data dir but runs its own Python,
+    # so its extras must never be written there.
+    if not _managed():
+        return
     state = read_state()
     state.update(updates)
     path = _state_path()

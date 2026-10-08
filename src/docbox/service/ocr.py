@@ -86,7 +86,12 @@ def read_file(
     path = Path(path).expanduser()
     if not path.is_file():
         raise NotFound(f"No such file: {path}")
-    spec = check_runnable(model_id)
+    return _read_checked(path, check_runnable(model_id), fmt, out_dir)
+
+
+def _read_checked(
+    path: Path, spec: ModelSpec, fmt: OutputFormat, out_dir: Path | None,
+) -> ReadDetail:
     try:
         data = path.read_bytes()
     except OSError as exc:
@@ -109,9 +114,14 @@ def read_files(
 ) -> Iterator[tuple[Path, ReadDetail | ServiceError]]:
     """Each file's read, or the error that stopped it; one bad file doesn't stop the rest
     (but a model that can't run at all stops them all, raised before the first file)."""
-    check_runnable(model_id)
+    # Checked once for the whole batch (for Ollama that's a request to its server); the
+    # reader still confirms the weights are there before each file.
+    spec = check_runnable(model_id)
     for path in paths:
+        path = Path(path).expanduser()
         try:
-            yield path, read_file(path, model_id, fmt, out_dir)
+            if not path.is_file():
+                raise NotFound(f"No such file: {path}")
+            yield path, _read_checked(path, spec, fmt, out_dir)
         except (Failed, Invalid, NotFound) as exc:
             yield path, exc

@@ -222,7 +222,11 @@ is `DOCBOX_DATA_DIR`, else the app's folder (`io.github.docboxai.docbox`, Tauri'
 `app_local_data_dir`) when it exists, else platformdirs'. Because several processes can now
 write it, read history and settings take cross-process file locks (`core/locks.py`,
 `filelock`), and installing a model holds a per-model lock (a second process gets
-`Conflict`). `core/runtime.py` has a third mode, `tool` (a standalone `uv tool install` /
+`Conflict`; removing an engine takes all of its models' locks). Each read records its
+process (`ReadSummary.pid`), so app startup only marks reads of dead processes as failed.
+`runtime/state.json` belongs to the installed app's managed env: only `managed` mode reads
+or writes it. `docbox` (`run()`) moves fd 1 to stderr under `--json` and writes the result
+to a private copy, because engines running in-process print to stdout. `core/runtime.py` has a third mode, `tool` (a standalone `uv tool install` /
 pip install with no project to sync): extras go in with `uv pip install` pinned by
 `core/pins/constraints.txt`, exported from `uv.lock` by `scripts/export_pins.sh`; rerun it
 whenever `uv.lock` changes (`tests/service/test_shared_state.py` fails when it's stale).

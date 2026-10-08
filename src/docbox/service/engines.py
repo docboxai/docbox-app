@@ -4,11 +4,15 @@ uninstalling an engine entirely (packages + every model it downloaded)."""
 from __future__ import annotations
 
 import shutil
+from contextlib import ExitStack
 from pathlib import Path
+
+from filelock import Timeout
 
 import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
 from docbox.backend.core import runtime
 from docbox.backend.core.jobs import job_store
+from docbox.backend.core.locks import model_lock
 from docbox.backend.core.paths import get_data_dir, get_models_dir
 from docbox.backend.core.registry import ModelSpec, registry
 from docbox.backend.schemas import EngineRemoveResult, EngineStorage, StorageInfo
@@ -76,12 +80,26 @@ def storage() -> StorageInfo:
 def remove_engine(extra: str) -> EngineRemoveResult:
     if extra not in runtime.EXTRAS:
         raise NotFound(f"Unknown engine: {extra}")
-    for spec in registry.list():
-        if spec.requires_extra == extra and job_store.active_for(spec.id) is not None:
+    specs = [s for s in registry.list() if s.requires_extra == extra]
+    for spec in specs:
+        if job_store.active_for(spec.id) is not None:
             raise Conflict(f"{spec.name} is downloading; wait for it.")
 
-    for d in _model_dirs(extra):
-        shutil.rmtree(d, ignore_errors=True)
+    # The data dir is shared with the CLI, the MCP server and the app: hold every one of
+    # this engine's install locks while its files go, so another process can't be
+    # installing one of its models at the same time.
+    with ExitStack() as held:
+        for spec in specs:
+            lock = model_lock(spec.id)
+            try:
+                lock.acquire()
+            except Timeout:
+                raise Conflict(
+                    f"{spec.name} is being installed by another DocBox process; wait for it."
+                ) from None
+            held.callback(lock.release)
+        for d in _model_dirs(extra):
+            shutil.rmtree(d, ignore_errors=True)
 
     label = runtime.EXTRAS[extra][0]
     if not runtime.extra_installed(extra):

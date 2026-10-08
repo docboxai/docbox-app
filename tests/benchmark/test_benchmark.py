@@ -189,6 +189,63 @@ def test_default_is_every_ready_model(fakes, docs, monkeypatch) -> None:
     assert [m.model_id for m in run.models] == ["fake-good", "fake-sloppy"]
 
 
+def test_cancel_stops_a_model_that_keeps_sending_pages(fakes, tmp_path) -> None:
+    folder = tmp_path / "many"
+    folder.mkdir()
+    for i in range(40):
+        fakes.page_image(1).save(folder / f"page{i:02}.png")
+    run = benchmarks.start(BenchConfig(sources=[folder], models=["fake-steady"]))
+    deadline = time.monotonic() + 30
+    while benchmarks.get(run.id).pages_done < 2:
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    benchmarks.cancel(run.id)
+    while benchmarks.get(run.id).state == "running":
+        assert time.monotonic() < deadline
+        time.sleep(0.05)
+    done = benchmarks.get(run.id)
+    assert done.state == "cancelled"
+    assert done.pages_done < 20  # 40 pages take 8 s; the cancel lands within ~1 s
+
+
+def test_page_references_are_found_for_names_with_brackets(tmp_path) -> None:
+    from docbox.benchmark.dataset import sidecar_references
+
+    doc = tmp_path / "scan[1].pdf"
+    doc.write_bytes(b"%PDF")
+    (tmp_path / "scan[1].p2.gt.txt").write_text("page two")
+    (tmp_path / "scan1.p3.gt.txt").write_text("another file's page")
+    assert sidecar_references(doc) == (None, {2: "page two"})
+
+
+def test_live_leaderboard_scores_a_running_model_only_on_pages_it_has_read() -> None:
+    from docbox.benchmark import report
+    from docbox.benchmark.store import BenchFile, BenchRun, ModelRun, PageResult, References
+
+    files = [BenchFile(id=f"f{i}", path=f"/x/f{i}.png", pages=1, has_reference=True)
+             for i in range(10)]
+    run = BenchRun(id="r", name="r", created_at=0, files=files, models=[
+        ModelRun(model_id="done", name="Done", state="done"),
+        ModelRun(model_id="live", name="Live", state="running"),
+    ])
+    refs = References(whole={f.id: "hello world" for f in files})
+    results = [PageResult(model_id="done", file_id=f.id, page=1, text="hello world!",
+                          seconds=1.0) for f in files]
+    # The running model has read 2 of 10 files so far, perfectly.
+    results += [PageResult(model_id="live", file_id=f"f{i}", page=1, text="hello world",
+                           seconds=1.0) for i in range(2)]
+    summary = report.summarize(run, results, refs)
+    rows = {r.model_id: r for r in summary.leaderboard}
+    assert rows["live"].accuracy == 1.0  # not 20%: unread files aren't counted as blank
+    assert rows["live"].scored_chars == 2 * len("hello world")
+    assert summary.best_model_id == "live"
+
+    # Once it stops (finished, failed or cancelled), what it never read counts against it.
+    run.models[1].state = "cancelled"
+    rows = {r.model_id: r for r in report.summarize(run, results, refs).leaderboard}
+    assert rows["live"].accuracy == 0.2
+
+
 def test_unknown_or_blocked_models_are_refused_up_front(fakes, docs) -> None:
     with pytest.raises(NotFound):
         _run(docs, ["no-such-model"])
