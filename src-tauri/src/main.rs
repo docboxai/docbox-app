@@ -3,17 +3,19 @@
 
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
-use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Mutex;
 use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
-const PREFERRED_PORT: u16 = 8756;
+// For the backend to report its port, and then again to answer /api/health.
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(60);
+// Lines of backend.log quoted when the backend doesn't come up.
+const LOG_TAIL_LINES: usize = 15;
 // How long a process group gets to exit on SIGTERM before it's SIGKILLed.
 #[cfg(not(windows))]
 const STOP_GRACE: Duration = Duration::from_secs(3);
@@ -275,21 +277,54 @@ fn ensure_runtime(app: &AppHandle, l: &Layout) -> Result<(), String> {
     write_state(l, &state)
 }
 
-fn pick_port() -> u16 {
-    if TcpListener::bind(("127.0.0.1", PREFERRED_PORT)).is_ok() {
-        return PREFERRED_PORT;
-    }
-    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("failed to bind ephemeral port");
-    listener.local_addr().unwrap().port()
+/// The line the backend prints first when started with `--port 0`:
+/// `{"docbox_backend": {"port": N}}`.
+fn parse_port_report(line: &str) -> Option<u16> {
+    let report: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
+    let port = report.get("docbox_backend")?.get("port")?.as_u64()?;
+    u16::try_from(port).ok().filter(|port| *port != 0)
 }
 
-fn spawn_backend(l: &Layout, port: u16) -> Result<Child, String> {
-    let log = File::create(l.logs_dir.join("backend.log")).map_err(|e| e.to_string())?;
+/// Wait for the backend's port report on its stdout. Anything else it prints there goes
+/// to the log, and the pipe is read to the end so the backend can never block on it.
+fn port_report(stdout: ChildStdout, mut log: File) -> mpsc::Receiver<u16> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let mut reported = false;
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            if !reported {
+                if let Some(port) = parse_port_report(&line) {
+                    reported = true;
+                    let _ = tx.send(port);
+                    continue;
+                }
+            }
+            let _ = writeln!(log, "{line}");
+        }
+    });
+    rx
+}
+
+/// The end of backend.log, for errors about a backend that didn't come up.
+fn log_tail(path: &Path) -> String {
+    let text = fs::read(path).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+    let lines: Vec<&str> = text.lines().collect();
+    let tail = lines[lines.len().saturating_sub(LOG_TAIL_LINES)..].join("\n");
+    if tail.trim().is_empty() {
+        return String::new();
+    }
+    format!("\n\nThe end of {}:\n{tail}", path.display())
+}
+
+/// Start the backend on a port the OS picks (`--port 0`; it reports the port on stdout).
+/// Returns a second handle on backend.log for `port_report` to write to.
+fn spawn_backend(l: &Layout, log_path: &Path) -> Result<(Child, File), String> {
+    let log = File::create(log_path).map_err(|e| e.to_string())?;
     let log_err = log.try_clone().map_err(|e| e.to_string())?;
     let mut cmd = Command::new(&l.python);
     outside_appimage(&mut cmd);
     own_process_group(&mut cmd);
-    cmd.args(["-m", "docbox.backend.main", "--host", "127.0.0.1", "--port", &port.to_string()])
+    cmd.args(["-m", "docbox.backend.main", "--host", "127.0.0.1", "--port", "0"])
         // The backend exits when its stdin closes: see `Backend::lifeline`.
         .arg("--exit-on-stdin-close")
         .current_dir(&l.project_dir)
@@ -297,7 +332,7 @@ fn spawn_backend(l: &Layout, port: u16) -> Result<Child, String> {
         .env("DOCBOX_PROJECT_DIR", &l.project_dir)
         .envs(uv_env(l))
         .stdin(Stdio::piped())
-        .stdout(Stdio::from(log))
+        .stdout(Stdio::piped())
         .stderr(Stdio::from(log_err));
     if l.managed {
         // The project isn't installed into the managed env (its source is read-only in
@@ -309,9 +344,10 @@ fn spawn_backend(l: &Layout, port: u16) -> Result<Child, String> {
             cmd.env("DOCBOX_UV", uv);
         }
     }
-    no_window(&mut cmd)
+    let child = no_window(&mut cmd)
         .spawn()
-        .map_err(|e| format!("failed to start the backend ({:?}): {e}", l.python))
+        .map_err(|e| format!("failed to start the backend ({:?}): {e}", l.python))?;
+    Ok((child, log))
 }
 
 /// Send `signal` to the process group `pgid` leads (see `own_process_group`).
@@ -398,14 +434,29 @@ fn boot(app: &AppHandle) -> Result<(), String> {
     ensure_runtime(app, &l)?;
 
     set_status(app, "starting", "Starting the OCR backend", 97.0);
-    let port = pick_port();
-    let base_url = format!("http://127.0.0.1:{port}");
-    let mut child = spawn_backend(&l, port)?;
-    *app.state::<Backend>().lifeline.lock().unwrap() = child.stdin.take();
-    *app.state::<Backend>().child.lock().unwrap() = Some(child);
-
-    tauri::async_runtime::block_on(wait_until_ready(&base_url))?;
+    let log_path = l.logs_dir.join("backend.log");
+    let (mut child, log) = spawn_backend(&l, &log_path)?;
+    let stdout = child.stdout.take().ok_or("the backend has no stdout pipe")?;
     let backend = app.state::<Backend>();
+    *backend.lifeline.lock().unwrap() = child.stdin.take();
+    *backend.child.lock().unwrap() = Some(child);
+
+    let port = match port_report(stdout, log).recv_timeout(HEALTH_TIMEOUT) {
+        Ok(port) => port,
+        Err(err) => {
+            stop_backend(&backend);
+            let why = match err {
+                RecvTimeoutError::Timeout => {
+                    format!("it didn't report its port within {HEALTH_TIMEOUT:?}")
+                }
+                RecvTimeoutError::Disconnected => "it stopped before reporting its port".into(),
+            };
+            return Err(format!("The backend didn't start: {why}.{}", log_tail(&log_path)));
+        }
+    };
+    let base_url = format!("http://127.0.0.1:{port}");
+    tauri::async_runtime::block_on(wait_until_ready(&base_url))
+        .map_err(|e| format!("{e}{}", log_tail(&log_path)))?;
     let mut s = backend.status.lock().unwrap();
     s.state = "ready".into();
     s.message = "ready".into();
@@ -519,4 +570,19 @@ fn main() {
             shutdown_backend(handle);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_port_report;
+
+    #[test]
+    fn reads_the_backends_port_report() {
+        assert_eq!(parse_port_report("{\"docbox_backend\": {\"port\": 51234}}\n"), Some(51234));
+        // Other output before the report, and reports that can't be a listening port.
+        assert_eq!(parse_port_report("INFO:     Started server process [42]"), None);
+        assert_eq!(parse_port_report("{\"docbox_backend\": {\"port\": 0}}"), None);
+        assert_eq!(parse_port_report("{\"docbox_backend\": {\"port\": 70000}}"), None);
+        assert_eq!(parse_port_report("{\"port\": 51234}"), None);
+    }
 }

@@ -1,9 +1,11 @@
-"""The backend, and everything it starts, never outlives the desktop shell that started it.
+"""The backend, and everything it starts, never outlives the desktop shell that started it,
+and it tells the shell which port it listens on.
 
 These run the real backend in a subprocess, the way the shell does."""
 
 from __future__ import annotations
 
+import json
 import os
 import socket
 import subprocess
@@ -24,13 +26,7 @@ def _free_port() -> int:
         return s.getsockname()[1]
 
 
-def _start_backend(data_dir: Path, *args: str) -> tuple[subprocess.Popen, int]:
-    port = _free_port()
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "docbox.backend.main", "--port", str(port), *args],
-        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        env={**os.environ, "DOCBOX_DATA_DIR": str(data_dir)},
-    )
+def _wait_healthy(proc: subprocess.Popen, port: int) -> None:
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         if proc.poll() is not None:
@@ -38,15 +34,40 @@ def _start_backend(data_dir: Path, *args: str) -> tuple[subprocess.Popen, int]:
         try:
             with _NO_PROXY.open(f"http://127.0.0.1:{port}/api/health", timeout=1) as resp:
                 if resp.status == 200:
-                    return proc, port
+                    return
         except OSError:
             time.sleep(0.2)
     proc.kill()
     pytest.fail("the backend never answered /api/health")
 
 
+def _start_like_the_shell(data_dir: Path) -> tuple[subprocess.Popen, int]:
+    """`--port 0 --exit-on-stdin-close`, stdin and stdout piped: what main.rs runs."""
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "docbox.backend.main", "--port", "0", "--exit-on-stdin-close"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        env={**os.environ, "DOCBOX_DATA_DIR": str(data_dir)},
+    )
+    assert proc.stdout is not None
+    report = json.loads(proc.stdout.readline())
+    port = report["docbox_backend"]["port"]
+    _wait_healthy(proc, port)
+    return proc, port
+
+
+def test_backend_reports_the_port_the_os_picked(data_dir: Path) -> None:
+    proc, port = _start_like_the_shell(data_dir)
+    try:
+        assert 0 < port < 65536
+        with _NO_PROXY.open(f"http://127.0.0.1:{port}/api/health", timeout=5) as resp:
+            assert json.loads(resp.read())["status"] == "ok"
+    finally:
+        proc.kill()
+        proc.wait(timeout=15)
+
+
 def test_backend_exits_when_the_shell_closes_its_stdin(data_dir: Path) -> None:
-    proc, _port = _start_backend(data_dir, "--exit-on-stdin-close")
+    proc, _port = _start_like_the_shell(data_dir)
     try:
         assert proc.stdin is not None
         proc.stdin.close()  # what happens when the shell exits, crashes or is killed
@@ -56,10 +77,16 @@ def test_backend_exits_when_the_shell_closes_its_stdin(data_dir: Path) -> None:
             proc.kill()
 
 
-def test_without_the_flag_stdin_closing_changes_nothing(data_dir: Path) -> None:
-    # A backend run by hand or in Docker keeps serving whatever its stdin does.
-    proc, port = _start_backend(data_dir)
+def test_run_by_hand_it_keeps_its_port_and_ignores_stdin(data_dir: Path) -> None:
+    # A backend started in a terminal or in Docker: a fixed port, no lifeline.
+    port = _free_port()
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "docbox.backend.main", "--port", str(port)],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        env={**os.environ, "DOCBOX_DATA_DIR": str(data_dir)},
+    )
     try:
+        _wait_healthy(proc, port)
         assert proc.stdin is not None
         proc.stdin.close()
         time.sleep(2)

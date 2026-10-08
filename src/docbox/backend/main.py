@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import json
 import os
+import socket
 import sys
 import threading
 from collections.abc import AsyncIterator
@@ -177,12 +179,23 @@ def _exit_when_stdin_closes(server: uvicorn.Server) -> None:
     threading.Thread(target=watch, name="docbox-lifeline", daemon=True).start()
 
 
+def _report_port(sock: socket.socket) -> None:
+    """Tell whoever started this process which port the OS picked: one JSON line on
+    stdout. From then on fd 1 is stderr (the log), so libraries that print to stdout can't
+    fill a pipe that nobody reads any more."""
+    print(json.dumps({"docbox_backend": {"port": sock.getsockname()[1]}}), flush=True)
+    os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+
+
 def main() -> None:
     import uvicorn
 
     parser = argparse.ArgumentParser(description="Run the DocBox backend server")
     parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8756)
+    parser.add_argument(
+        "--port", type=int, default=8756,
+        help="0: let the OS pick a free port and print it as a JSON line on stdout",
+    )
     parser.add_argument(
         "--exit-on-stdin-close", action="store_true",
         help="shut down when stdin reaches EOF (the desktop app holds it open while it runs)",
@@ -192,7 +205,16 @@ def main() -> None:
     server = uvicorn.Server(uvicorn.Config(app, host=args.host, port=args.port, log_level="info"))
     if args.exit_on_stdin_close:
         _exit_when_stdin_closes(server)
-    server.run()
+    if args.port != 0:
+        server.run()
+        return
+    # Bound here, before uvicorn starts, so the port is known and can't be taken between
+    # choosing it and listening on it.
+    family = socket.AF_INET6 if ":" in args.host else socket.AF_INET
+    sock = socket.socket(family, socket.SOCK_STREAM)
+    sock.bind((args.host, 0))
+    _report_port(sock)
+    server.run(sockets=[sock])
 
 
 if __name__ == "__main__":
