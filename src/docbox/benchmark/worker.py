@@ -5,7 +5,8 @@
 The job on stdin: {"model_id": "...", "files": [{"id": "...", "path": "..."}]}.
 Events on stdout, one JSON object per line:
 
-    {"event": "loaded", "seconds": 1.9}
+    {"event": "loaded", "seconds": 1.9, "in_process": true}  false: the model runs in
+                                                         another program (Ollama, cloud)
     {"event": "page", "file_id": "...", "page": 1, "text": "...", "lines": [...],
      "seconds": 0.4}                                  (or "error": "..." instead of text)
     {"event": "file_error", "file_id": "...", "error": "..."}
@@ -62,7 +63,8 @@ def main() -> int:
         engine = spec.engine_factory()
         started = time.perf_counter()
         engine.load()
-        emit("loaded", seconds=round(time.perf_counter() - started, 3))
+        emit("loaded", seconds=round(time.perf_counter() - started, 3),
+             in_process=getattr(engine, "runs_in_process", True))
     except ServiceError as exc:
         emit("fatal", error=exc.detail, code=exc.code)
         return 1

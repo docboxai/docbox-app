@@ -45,6 +45,22 @@ def resolve_spec(model_id: str) -> ModelSpec:
     return spec
 
 
+def describe(model_id: str) -> tuple[str, str | None, str | None]:
+    """(engine, family, variant) for a model id, without asking any platform: safe for
+    old benchmark results whose Ollama model is gone, or while Ollama isn't running."""
+    try:
+        spec = registry.get(model_id)
+    except KeyError:
+        pass
+    else:
+        return spec.engine, spec.family, spec.variant
+    if model_id.startswith("ollama:"):
+        return ("ollama", *ollama.family_and_variant(model_id.split(":", 1)[1]))
+    if model_id.startswith("nvidia-nim:"):
+        return "nvidia-nim", None, None
+    return "other", None, None
+
+
 def cloud_blocked(model_id: str) -> bool:
     """True for a cloud model while the user has the cloud engine switched off."""
     return model_id.startswith("nvidia-nim:") and not config_store.cloud_enabled()

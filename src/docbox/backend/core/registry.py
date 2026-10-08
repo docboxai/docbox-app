@@ -59,6 +59,11 @@ class ModelSpec:
     # better). None: never picked as the recommendation, e.g. a model for one language
     # family, or one from Ollama or the cloud.
     quality: int | None = None
+    # Sizes of one model: specs sharing a `family` are the same model at different sizes
+    # ("PaddleOCR — English": Mobile, Large), so the benchmark graph joins them with a
+    # line. `variant` names this size. None: the model stands alone.
+    family: str | None = None
+    variant: str | None = None
 
 
 class ModelRegistry:

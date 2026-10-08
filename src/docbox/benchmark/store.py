@@ -46,6 +46,9 @@ class ModelRun(BaseModel):
     error: str | None = None
     load_seconds: float | None = None
     peak_memory_mb: float | None = None
+    # Why there's no memory figure, when the model runs in another program's process
+    # (Ollama, the cloud, an engine container) that the worker can't measure.
+    memory_note: str | None = None
 
 
 class LeaderboardRow(BaseModel):
@@ -64,6 +67,18 @@ class LeaderboardRow(BaseModel):
     wer: float | None = None
     accuracy: float | None = None
     scored_chars: int = 0
+    # Added later, so they come last in the CSV report's columns.
+    # Half-width of a 95% interval around `accuracy`, from how much it varies between the
+    # `scored_units` pages or documents that have reference text (None below two).
+    accuracy_margin: float | None = None
+    scored_units: int = 0
+    # The engine ("paddleocr", "tesseract", "ollama", ...) and, for one model in several
+    # sizes, the family it belongs to and which size this is (`ModelSpec.family`/`variant`).
+    engine: str = "other"
+    family: str | None = None
+    variant: str | None = None
+    # Why `peak_memory_mb` is empty (ModelRun.memory_note).
+    memory_note: str | None = None
 
 
 class BenchSummary(BaseModel):
