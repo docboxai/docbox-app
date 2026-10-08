@@ -212,8 +212,11 @@ deb, rpm) pointing at the renamed files. Installed copies back to 0.1.0 read
 `.deb`/`.rpm` go through pkexec), and falls back to comparing the version with GitHub's
 latest release and opening the releases page when there's no usable `latest.json` or the
 install fails. External web pages go through `lib/external.ts` (`openExternal`,
-`openInBrowser`): `target="_blank"` alone doesn't open the browser on macOS or Linux, and the
-opener capability lists every URL allowed.
+`openInBrowser`): `target="_blank"` alone doesn't open the browser on macOS or Linux. The
+opener capability lists every URL allowed, compared as exact strings, so they're written the
+way a browser normalises them (`https://build.nvidia.com/`, trailing slash) and the app's
+own links are constants in `lib/external.ts`; `tests/backend/test_external_links.py` checks
+the allow-list against those, the prerequisite download pages and `ocrbench.json`.
 
 Child processes (the bootstrap `uv`, the backend) go through `outside_appimage` in
 `main.rs`: the AppImage launcher's PYTHONHOME/PYTHONPATH/LD_LIBRARY_PATH point into its
@@ -359,14 +362,28 @@ The Benchmarks view (`BenchmarksView.tsx`: drop zone, model picker, batch cards;
 `BenchmarkRun.tsx`: leaderboard and Compare) talks to `/api/benchmarks`
 (`api/routes_benchmarks.py`). Uploads are sent with their folder path as the multipart
 file name so `.gt.txt` sidecars land next to their documents in the run's `inputs/`; the
-route sanitises those paths. Runs from the CLI and MCP appear there too (same data dir). `BenchmarkChart.tsx` is the
-accuracy-vs-cost scatter (hand-built SVG, no chart library): "This run" plots the run's
-leaderboard with a Pareto line; "OCRBench v1/v2" plots published scores from
-`benchmark/ocrbench.json` (served at `/api/benchmarks/reference`) against catalog download
-size, without ranking them, since sources differ. Every score there needs a source URL and a
-`self_reported` flag; `tests/benchmark/test_reference.py` checks they name catalog models.
-Scatter colours: at most three series hues (`--color-series-1..3`, validated all-pairs for
-colour-blind readers) plus a neutral; every point is also labelled.
+route sanitises those paths. Runs from the CLI and MCP appear there too (same data dir). A run's leaderboard is
+`BenchmarkLeaderboard.tsx`: one row of controls (scores from this run or OCRBench v1/v2,
+the cost measure, every size or the best size of each model, a Models filter) scoping both
+views below it. `BenchmarkChart.tsx` is the graph (hand-built SVG, no chart library):
+accuracy against cost on a log axis reversed so the cheapest is on the right ("most
+efficient" top right), one line per family through its sizes, labelled once at its best
+point. `BenchmarkBars.tsx` is the ranked bars with each row's 95% interval, and doubles as
+the graph's table view. Families come from `ModelSpec.family`/`variant` (an Ollama model's
+tags too), copied onto each leaderboard row by `platforms.describe()`, which never asks a
+platform; `accuracy_margin` is `metrics.cer_margin()`: the ratio estimator's standard error
+over the pages or documents with reference text, widened with Student's t for few of them.
+"OCRBench v1/v2" plots published scores from `benchmark/ocrbench.json` (served at
+`/api/benchmarks/reference`) against catalog download size, without ranking them, since
+sources differ. Every score there needs a source URL and a `self_reported` flag;
+`tests/benchmark/test_reference.py` checks they name catalog models. Colours
+(`lib/benchmarkSeries.ts`): at most three series hues (`--color-series-1..3`, validated
+all-pairs for colour-blind readers) plus a neutral, by engine, never by rank; labels use
+text colours, not the series hue (Tesseract's orange is under 4.5:1 as text). An engine whose
+model runs in another process (Ollama, NVIDIA, `RemoteEngine`) sets `runs_in_process =
+False`; the worker reports it, and the run records no peak memory, with a `memory_note`,
+rather than the worker's own. In the desktop app the report opens on this computer
+(`POST /api/benchmarks/{id}/report/open`); only a browser gets the download link.
 
 Every engine implements `delete()`; PaddleOCR's keeps model dirs another *downloaded*
 catalog entry still uses (all PP-OCRv5 language families share `PP-OCRv5_server_det`).
