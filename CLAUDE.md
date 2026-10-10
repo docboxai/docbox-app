@@ -192,7 +192,9 @@ skipped when the venv exists and `runtime/uv.lock.installed` matches the bundled
 The backend then runs with `PYTHONPATH=<resources>/backend/src` (the project is never
 installed: its dir is read-only under Program Files), `DOCBOX_RUNTIME_MODE=managed`,
 `DOCBOX_UV`, `DOCBOX_DATA_DIR`, and the same `UV_*` env vars. Logs go to
-`<data>/logs/{setup,backend}.log`.
+`<data>/logs/{setup,backend}.log`. When uv or the backend ends before it's ready, the shell
+adds how it ended (exit status, or the signal of a crash, which prints nothing itself) to
+that log and to the error screen.
 
 HTTPS trusts the operating system's certificates, so downloads work behind company proxies
 that inspect HTTPS with their own CA: every uv the app runs gets `UV_SYSTEM_CERTS=1`
@@ -218,8 +220,11 @@ commit that isn't on `main` or a version that doesn't match `tauri.conf.json`, `
 and `pyproject.toml`. Each platform's `build` job uploads its installers; the `release` job
 names them `DocBox-<version>-<os>-<arch>.<ext>` and creates a draft release, failing if an
 installer is missing or unexpected. Its third-party actions are pinned to commits and the
-Tauri CLI to an exact version. Builds are signed for the in-app updater
-(`TAURI_SIGNING_PRIVATE_KEY*` secrets; `bundle.createUpdaterArtifacts`), and the release job
+Tauri CLI to an exact version. Linux bundles uv's glibc build: the AppImage step adds a
+library path (`RUNPATH`) to every program in `usr/bin`, which makes the static musl build
+crash on start. The Linux `build` job runs the uv inside the AppImage, `.deb` and `.rpm`
+(`scripts/check_bundled_uv.sh`) before uploading them. Builds are signed for the in-app
+updater (`TAURI_SIGNING_PRIVATE_KEY*` secrets; `bundle.createUpdaterArtifacts`), and the release job
 writes `latest.json` with an entry per `<os>-<arch>[-<installer>]` (nsis, msi, app, appimage,
 deb, rpm) pointing at the renamed files. Installed copies back to 0.1.0 read
 `releases/latest/download/latest.json` and only accept that key (`plugins.updater.pubkey`).
