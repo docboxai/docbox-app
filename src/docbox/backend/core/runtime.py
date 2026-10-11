@@ -31,6 +31,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -115,12 +116,19 @@ def can_install() -> bool:
     return _has_project()
 
 
+# importlib.invalidate_caches() isn't thread-safe: two threads in it at once can both
+# delete the same sys.path_importer_cache entry, and one fails with KeyError. Requests run
+# on a thread pool, so the model list and the storage figures can call it together.
+_FIND_LOCK = threading.Lock()
+
+
 def installed_extras() -> set[str]:
-    importlib.invalidate_caches()
-    return {
-        name for name, (_label, marker) in EXTRAS.items()
-        if importlib.util.find_spec(marker) is not None
-    }
+    with _FIND_LOCK:
+        importlib.invalidate_caches()
+        return {
+            name for name, (_label, marker) in EXTRAS.items()
+            if importlib.util.find_spec(marker) is not None
+        }
 
 
 def extra_installed(name: str) -> bool:

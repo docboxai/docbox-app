@@ -191,7 +191,9 @@ Installed builds bundle the backend source + `pyproject.toml` + `uv.lock` +
 skipped when the venv exists and `runtime/uv.lock.installed` matches the bundled lock.
 The backend then runs with `PYTHONPATH=<resources>/backend/src` (the project is never
 installed: its dir is read-only under Program Files), `DOCBOX_RUNTIME_MODE=managed`,
-`DOCBOX_UV`, `DOCBOX_DATA_DIR`, and the same `UV_*` env vars. Logs go to
+`DOCBOX_UV`, `DOCBOX_DATA_DIR`, `PYTHONPYCACHEPREFIX=<data>/runtime/pycache` (bytecode
+written next to the bundled source would outlive the uninstaller), and the same `UV_*`
+env vars. Logs go to
 `<data>/logs/{setup,backend}.log`.
 
 HTTPS trusts the operating system's certificates, so downloads work behind company proxies
@@ -251,6 +253,9 @@ mount and would break the managed Python.
   its own children (`stop_children`: engine installs, benchmark workers), asks uvicorn to
   shut down, and hard-exits after a few seconds if that hangs. A backend run by hand or in
   Docker has no flag and ignores stdin.
+  Wait for EOF with `core/lifeline.py`, never a blocking read: on Windows a pending read on
+  the stdin pipe makes DLLs that touch the standard handles as they load (numpy, so Paddle
+  and torch) hang the import for ever. It polls with `PeekNamedPipe` there.
 - **Process groups:** on Unix the backend and the bootstrap `uv` each lead their own process
   group, so `stop_child`/`kill_tree` SIGTERM the whole group and SIGKILL what's left after a
   grace period. Windows uses `taskkill /T /F`, which also reaches past the venv's

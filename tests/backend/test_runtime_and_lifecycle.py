@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+import threading
 import time
 from pathlib import Path
 
@@ -55,6 +57,32 @@ def test_sync_command_dev_mode_keeps_dev_group_and_exact_for_removal(monkeypatch
 def test_installed_extras_detects_paddle_in_dev_env() -> None:
     # The dev env is synced with `--extra paddle` (see CLAUDE.md).
     assert "paddle" in runtime.installed_extras()
+
+
+def test_installed_extras_never_invalidates_caches_from_two_threads(monkeypatch) -> None:
+    """The model list and the storage figures run on the request thread pool and both ask
+    which engines are installed. importlib.invalidate_caches() isn't thread-safe: two calls
+    at once can delete the same sys.path_importer_cache entry, and one raised KeyError
+    (HTTP 500s at the end of an install)."""
+    inside: list[int] = []
+    most = 0
+    real = importlib.invalidate_caches
+
+    def watched() -> None:
+        nonlocal most
+        inside.append(1)
+        most = max(most, len(inside))
+        time.sleep(0.05)
+        real()
+        inside.pop()
+
+    monkeypatch.setattr(importlib, "invalidate_caches", watched)
+    threads = [threading.Thread(target=runtime.installed_extras) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert most == 1
 
 
 def test_lockfile_installs_only_one_opencv_distribution() -> None:

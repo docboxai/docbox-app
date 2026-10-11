@@ -343,7 +343,10 @@ fn spawn_backend(l: &Layout, log_path: &Path) -> Result<(Child, File), String> {
     if l.managed {
         // The project isn't installed into the managed env (its source is read-only in
         // the install dir), so put the bundled source on the import path instead.
+        // Bytecode for that source goes in the data dir too: written next to it, the
+        // .pyc files are left in the install dir after the uninstaller has run.
         cmd.env("PYTHONPATH", l.project_dir.join("src"))
+            .env("PYTHONPYCACHEPREFIX", l.runtime_dir.join("pycache"))
             .env("DOCBOX_RUNTIME_MODE", "managed")
             .env("UV_PYTHON_PREFERENCE", "only-managed");
         if let Some(uv) = &l.uv {

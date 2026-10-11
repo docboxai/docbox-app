@@ -148,10 +148,14 @@ class TesseractEngine:
         import pytesseract
         from pytesseract import Output
 
+        # The language files' folder goes in TESSDATA_PREFIX rather than --tessdata-dir:
+        # on Windows pytesseract splits the config without removing quotes, so a quoted
+        # path reaches tesseract with its quotes and is never found, and an unquoted one
+        # breaks at the first space.
+        os.environ["TESSDATA_PREFIX"] = str(_tessdata_dir())
         data = pytesseract.image_to_data(
             image,
             lang=self._lang,
-            config=f'--tessdata-dir "{_tessdata_dir()}"',
             output_type=Output.DICT,
         )
 
