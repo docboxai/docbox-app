@@ -2,10 +2,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::ffi::OsString;
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -248,13 +248,18 @@ fn ensure_runtime(app: &AppHandle, l: &Layout) -> Result<(), String> {
         1.0,
     );
 
-    let mut child = no_window(&mut cmd)
-        .spawn()
-        .map_err(|e| format!("couldn't run bundled uv at {uv:?}: {e}"))?;
-    *app.state::<Backend>().setup_pid.lock().unwrap() = Some(child.id());
-
     // uv writes progress to stderr; stdout is quiet. Mirror both to the setup log.
     let mut log = File::create(l.logs_dir.join("setup.log")).map_err(|e| e.to_string())?;
+    let mut child = match no_window(&mut cmd).spawn() {
+        Ok(child) => child,
+        Err(e) => {
+            let err = format!("couldn't run bundled uv at {uv:?}: {e}");
+            let _ = writeln!(log, "[docbox] {err}");
+            return Err(err);
+        }
+    };
+    *app.state::<Backend>().setup_pid.lock().unwrap() = Some(child.id());
+
     let stderr = child.stderr.take().unwrap();
     let mut steps = 0i32;
     let mut tail: Vec<String> = Vec::new();
@@ -275,12 +280,25 @@ fn ensure_runtime(app: &AppHandle, l: &Layout) -> Result<(), String> {
     let status = child.wait().map_err(|e| e.to_string())?;
     *app.state::<Backend>().setup_pid.lock().unwrap() = None;
     if !status.success() {
-        return Err(format!("Setup failed:\n{}", tail.join("\n")));
+        // In the log too: uv may have printed nothing (a crash), leaving it empty.
+        let _ = writeln!(log, "[docbox] uv ended with {status}");
+        return Err(setup_failure(status, &tail));
     }
 
     fs::write(&installed_lock_path, &bundled_lock).map_err(|e| e.to_string())?;
     state["resync_pending"] = serde_json::Value::Bool(false);
     write_state(l, &state)
+}
+
+/// The error for a bootstrap `uv sync` that failed: how uv ended (an exit status, or on
+/// Unix the signal, e.g. "signal: 11 (SIGSEGV) (core dumped)"), then the last lines it
+/// printed. A crash prints nothing, so then how it ended is all there is to show.
+fn setup_failure(status: ExitStatus, tail: &[String]) -> String {
+    if tail.is_empty() {
+        format!("Setup failed: uv ended with {status} before printing anything.")
+    } else {
+        format!("Setup failed: uv ended with {status}.\n{}", tail.join("\n"))
+    }
 }
 
 /// The line the backend prints first when started with `--port 0`:
@@ -450,14 +468,28 @@ fn boot(app: &AppHandle) -> Result<(), String> {
     let port = match port_report(stdout, log).recv_timeout(HEALTH_TIMEOUT) {
         Ok(port) => port,
         Err(err) => {
+            // If it ended by itself, say how: a crash leaves nothing of its own in the log.
+            let ended = backend
+                .child
+                .lock()
+                .unwrap()
+                .as_mut()
+                .and_then(|child| child.try_wait().ok().flatten());
             stop_backend(&backend);
-            let why = match err {
-                RecvTimeoutError::Timeout => {
+            let why = match (ended, err) {
+                (Some(status), _) => format!("it ended with {status} before reporting its port"),
+                (None, RecvTimeoutError::Timeout) => {
                     format!("it didn't report its port within {HEALTH_TIMEOUT:?}")
                 }
-                RecvTimeoutError::Disconnected => "it stopped before reporting its port".into(),
+                (None, RecvTimeoutError::Disconnected) => {
+                    "it stopped before reporting its port".into()
+                }
             };
-            return Err(format!("The backend didn't start: {why}.{}", log_tail(&log_path)));
+            let tail = log_tail(&log_path);
+            if let Ok(mut log) = OpenOptions::new().append(true).open(&log_path) {
+                let _ = writeln!(log, "[docbox] The backend didn't start: {why}.");
+            }
+            return Err(format!("The backend didn't start: {why}.{tail}"));
         }
     };
     let base_url = format!("http://127.0.0.1:{port}");
@@ -601,7 +633,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_port_report;
+    use super::{parse_port_report, setup_failure};
 
     #[test]
     fn reads_the_backends_port_report() {
@@ -611,5 +643,19 @@ mod tests {
         assert_eq!(parse_port_report("{\"docbox_backend\": {\"port\": 0}}"), None);
         assert_eq!(parse_port_report("{\"docbox_backend\": {\"port\": 70000}}"), None);
         assert_eq!(parse_port_report("{\"port\": 51234}"), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_failed_setup_says_how_uv_ended() {
+        use std::os::unix::process::ExitStatusExt;
+        use std::process::ExitStatus;
+        // Raw wait statuses: a segfault with a core dump (signal 11 | 0x80), and exit code 2.
+        let crashed = setup_failure(ExitStatus::from_raw(11 | 0x80), &[]);
+        assert!(crashed.contains("SIGSEGV"), "{crashed}");
+        assert!(crashed.contains("before printing anything"), "{crashed}");
+        let failed = setup_failure(ExitStatus::from_raw(2 << 8), &["error: no network".into()]);
+        assert!(failed.contains("exit status: 2"), "{failed}");
+        assert!(failed.ends_with("\nerror: no network"), "{failed}");
     }
 }

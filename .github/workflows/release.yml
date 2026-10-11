@@ -68,9 +68,10 @@ jobs:
             uv_asset: uv-x86_64-pc-windows-msvc.zip
             sidecar: uv-x86_64-pc-windows-msvc.exe
           - os: ubuntu-22.04
-            # The static musl build, so the AppImage's uv runs on any distro; Tauri
-            # names sidecars by the app's own target triple (gnu).
-            uv_asset: uv-x86_64-unknown-linux-musl.tar.gz
+            # The glibc build (glibc 2.17+), not the static musl one: the AppImage step
+            # adds a library path to every program in usr/bin, and the static musl uv
+            # crashes on start after that. The AppImage needs glibc anyway.
+            uv_asset: uv-x86_64-unknown-linux-gnu.tar.gz
             sidecar: uv-x86_64-unknown-linux-gnu
           # Apple Silicon only: PaddlePaddle publishes no Intel macOS wheel. Not notarized
           # (no Apple Developer ID yet); tauri.conf.json signs it ad hoc so macOS doesn't
@@ -142,6 +143,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: cargo tauri build
+
+      # The app sets itself up with this uv on first launch, so a package whose uv doesn't
+      # run is a package that can't start.
+      - name: Check the uv in each Linux package runs
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y rpm2cpio
+          scripts/check_bundled_uv.sh src-tauri/target/release/bundle "$UV_VERSION"
 
       # The installers and their signatures, not Tauri's staging folders beside them.
       - uses: actions/upload-artifact@v7
