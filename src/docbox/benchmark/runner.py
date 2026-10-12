@@ -198,8 +198,12 @@ def _finish(run: BenchRun) -> None:
     results = store.load_results(run.id)
     refs = store.load_references(run.id)
     run.summary = report.summarize(run, results, refs)
-    store.save(run)
-    store.write_report(run.id, report.to_markdown(run))
+    # The report goes first: once run.json says the run has ended, its folder may be
+    # deleted at once, so nothing may be written there after it.
+    try:
+        store.write_report(run.id, report.to_markdown(run))
+    finally:
+        store.save(run)
 
 
 _NOT_READY = {

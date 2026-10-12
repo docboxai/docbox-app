@@ -30,7 +30,7 @@ from docbox.backend.api import (
     routes_reads,
     routes_settings,
 )
-from docbox.backend.core import history, tls
+from docbox.backend.core import history, lifeline, tls
 from docbox.backend.core.client_header import CLIENT_HEADER
 from docbox.backend.schemas import HealthStatus
 
@@ -169,8 +169,7 @@ def _exit_when_stdin_closes(server: uvicorn.Server) -> None:
     on as an orphan that holds the CPU, the port and the model files."""
 
     def watch() -> None:
-        with contextlib.suppress(OSError, ValueError):
-            sys.stdin.buffer.read()
+        lifeline.wait_for_stdin_close()
         stop_children()
         server.should_exit = True
         hard_exit = threading.Timer(_EXIT_GRACE_S, os._exit, args=(0,))

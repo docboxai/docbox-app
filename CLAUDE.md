@@ -256,6 +256,9 @@ mount and would break the managed Python.
   its own children (`stop_children`: engine installs, benchmark workers), asks uvicorn to
   shut down, and hard-exits after a few seconds if that hangs. A backend run by hand or in
   Docker has no flag and ignores stdin.
+  Wait for EOF with `core/lifeline.py`, never a blocking read: on Windows a pending read on
+  the stdin pipe makes DLLs that touch the standard handles as they load (numpy, so Paddle
+  and torch) hang the import for ever. It polls with `PeekNamedPipe` there.
 - **Process groups:** on Unix the backend and the bootstrap `uv` each lead their own process
   group, so `stop_child`/`kill_tree` SIGTERM the whole group and SIGKILL what's left after a
   grace period. Windows uses `taskkill /T /F`, which also reaches past the venv's

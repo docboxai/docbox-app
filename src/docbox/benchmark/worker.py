@@ -30,7 +30,6 @@ registered outside the built-in catalog can run here too.
 
 from __future__ import annotations
 
-import contextlib
 import json
 import mimetypes
 import os
@@ -58,9 +57,10 @@ def _read_job() -> dict:
 
 
 def _exit_when_stdin_closes() -> None:
+    from docbox.backend.core import lifeline
+
     def watch() -> None:
-        with contextlib.suppress(OSError, ValueError):
-            sys.stdin.read()
+        lifeline.wait_for_stdin_close()
         # Whoever started this worker is gone; nobody will read its pages.
         os._exit(1)
 

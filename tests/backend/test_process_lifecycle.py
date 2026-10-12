@@ -111,3 +111,36 @@ def test_stop_children_ends_what_the_backend_started(data_dir: Path) -> None:
         env={**os.environ, "DOCBOX_DATA_DIR": str(data_dir)}, check=True,
     )
     assert out.stdout.strip() == "True"
+
+
+def test_native_libraries_load_while_the_lifeline_waits(data_dir: Path) -> None:
+    """On Windows a blocking read on the stdin pipe made every DLL whose C runtime touches
+    the standard handles wait behind it: importing numpy (so PaddleOCR, EasyOCR) hung for
+    ever in the app, while it worked from a terminal."""
+    pytest.importorskip("numpy")
+    script = (
+        "import sys, threading, time\n"
+        "from docbox.backend.core import lifeline\n"
+        "closed = threading.Event()\n"
+        "threading.Thread(target=lambda: (lifeline.wait_for_stdin_close(), closed.set()),\n"
+        "                 daemon=True).start()\n"
+        "time.sleep(1)  # the lifeline is waiting now\n"
+        "imported = threading.Event()\n"
+        "threading.Thread(target=lambda: (__import__('numpy'), imported.set()),\n"
+        "                 daemon=True).start()\n"
+        "print(imported.wait(30), flush=True)\n"
+        "print(closed.wait(15), flush=True)\n"
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        env={**os.environ, "DOCBOX_DATA_DIR": str(data_dir)},
+    )
+    assert proc.stdin is not None and proc.stdout is not None
+    try:
+        assert proc.stdout.readline().strip() == "True", "importing numpy hung"
+        proc.stdin.close()
+        assert proc.stdout.readline().strip() == "True", "stdin closing went unnoticed"
+    finally:
+        proc.kill()
+        proc.wait(timeout=15)
