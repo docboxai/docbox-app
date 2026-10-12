@@ -2,10 +2,11 @@ import { Download } from "lucide-react";
 import { links } from "@/lib/links";
 import { reveal } from "@/lib/reveal";
 import { ClosingAurora } from "./ClosingAurora";
+import { Eyebrow } from "./Eyebrow";
 import { StarButton } from "./StarButton";
 
 const FOOTER_LINKS = [
-  { label: "Models", href: links.engines },
+  { label: "Engine guide", href: links.engines },
   { label: "Docs", href: links.docs },
   { label: "Changelog", href: links.changelog },
   { label: "GitHub", href: links.repo },
@@ -16,25 +17,26 @@ export function Closing({ stars }: { stars: number | null }) {
     <section aria-labelledby="closing-title" className="px-3 pt-24 sm:px-5">
       <div className="relative isolate flex flex-col items-center gap-[22px] overflow-hidden rounded-[28px] px-6 py-24 text-center ring-1 ring-white/[0.14] sm:px-10">
         <ClosingAurora />
-        <p {...reveal()} className="relative rounded-full bg-ink/40 px-3 py-1.5 text-xs font-medium ring-1 ring-white/25">
-          Free · Windows, macOS &amp; Linux
-        </p>
+        {/* Darkens the aurora under the text: its bright drifts otherwise pass behind the copy. */}
+        <div aria-hidden="true" className="absolute inset-0 bg-night/50" />
+        <Eyebrow {...reveal()} className="relative text-white">
+          Free · Windows, macOS (Apple Silicon) &amp; Linux
+        </Eyebrow>
         <h2
           {...reveal(100)}
           id="closing-title"
-          className="relative font-heading text-[clamp(36px,7vw,54px)] leading-[1.074] font-normal tracking-[-1.2px]"
+          className="relative max-w-[11em] font-heading text-[clamp(32px,7vw,54px)] leading-[1.074] font-normal tracking-[-1.2px] text-balance"
         >
-          Your documents never
-          <br />
-          leave your computer.
+          {/* Balanced instead of a forced break: on phones the break left single words on their own lines. */}
+          Your documents never leave your computer.
         </h2>
         <p {...reveal(200)} className="relative text-[15px] text-mist">
-          Install DocBox, open a folder, and see which model reads it best.
+          Install DocBox, add a few models, then drop in a folder to see which reads it best.
         </p>
         <div {...reveal(300)} className="relative flex flex-wrap items-center justify-center gap-3 pt-2.5">
           <a
             href={links.download}
-            className="press flex items-center gap-2 rounded-full bg-white py-[13px] ps-5 pe-[22px] text-sm font-semibold text-ink hover:bg-tolopea-100"
+            className="press flex items-center gap-2 rounded-xl bg-white py-[13px] ps-5 pe-[22px] text-sm font-semibold text-ink hover:bg-tolopea-100"
           >
             <Download aria-hidden="true" className="size-4" />
             Download DocBox

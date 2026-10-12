@@ -8,7 +8,7 @@ import ascii from "./shader/glsl/ascii";
 
 // Most a pointer can tilt the emblem, in degrees, and how much slower than the page it
 // moves as you scroll away from the hero. The lag only applies side by side with the
-// copy (lg); stacked above it on narrow screens, drifting down would cover the text.
+// copy (lg); stacked under it on narrow screens, the emblem stays put.
 const MAX_TILT = 8;
 const SCROLL_LAG = 0.12;
 const SIDE_BY_SIDE = "(min-width: 1024px)";

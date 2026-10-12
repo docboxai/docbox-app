@@ -7,6 +7,7 @@ import "./globals.css";
 // The design's four faces, self-hosted by next/font (no request to Google at runtime).
 const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans", display: "swap" });
 const hostGrotesk = Host_Grotesk({ subsets: ["latin"], variable: "--font-host-grotesk", display: "swap" });
+// Only the recognised text in Compare uses it: labels are DM Sans.
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono", display: "swap" });
 // Only "Tesseract" in the Works With row uses it.
 const playfair = Playfair_Display({

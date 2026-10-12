@@ -26,6 +26,10 @@ interface UniformInfo {
 // once each effect has built up.
 const STILL_TIME = 3;
 
+// How long an effect plays each time it comes on screen before holding its last frame:
+// nothing on the page moves on its own for more than 5 s (WCAG 2.2.2).
+const PLAY_MS = 5000;
+
 const UNIFORM = /(?:\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*)?uniform\s+(\w+)\s+(\w+)\s*;/g;
 
 function hexToRgb(hex: string): number[] {
@@ -234,7 +238,17 @@ export function ShaderCanvas({
 
     const drawStill = () => draw(STILL_TIME);
     let visible = false;
-    const show = () => (reduced ? drawStill() : join(draw));
+    let stopTimer = 0;
+    const stop = () => {
+      window.clearTimeout(stopTimer);
+      leave(draw);
+    };
+    const show = () => {
+      if (reduced) return drawStill();
+      join(draw);
+      window.clearTimeout(stopTimer);
+      stopTimer = window.setTimeout(() => leave(draw), PLAY_MS);
+    };
 
     resize();
     // Resizing clears the canvas, so redraw a frame even when it's offscreen.
@@ -247,7 +261,7 @@ export function ShaderCanvas({
       ([entry]) => {
         visible = entry.isIntersecting;
         if (visible) show();
-        else leave(draw);
+        else stop();
       },
       { rootMargin: "120px" },
     );
@@ -255,7 +269,7 @@ export function ShaderCanvas({
 
     const onLost = (event: Event) => {
       event.preventDefault();
-      leave(draw);
+      stop();
       setReady(false);
     };
     canvas.addEventListener("webglcontextlost", onLost);
@@ -265,7 +279,7 @@ export function ShaderCanvas({
 
     return () => {
       cancelAnimationFrame(first);
-      leave(draw);
+      stop();
       resizeObserver.disconnect();
       intersection.disconnect();
       canvas.removeEventListener("webglcontextlost", onLost);

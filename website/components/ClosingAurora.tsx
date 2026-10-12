@@ -36,7 +36,7 @@ export function ClosingAurora() {
         maxPixelRatio={1.25}
         className="absolute inset-0 size-full"
         fallback={
-          <div className="absolute inset-0 bg-[radial-gradient(60%_80%_at_15%_30%,#4318ff55,transparent),radial-gradient(50%_70%_at_90%_80%,#a9a7ff33,transparent),#0a0626]" />
+          <div className="absolute inset-0 bg-[radial-gradient(60%_80%_at_15%_30%,#4318ff55,transparent),radial-gradient(50%_70%_at_90%_80%,#a9a7ff33,transparent),var(--color-night)]" />
         }
       />
     </div>
