@@ -20,10 +20,10 @@ export function SiteHeader({ stars }: { stars: number | null }) {
           <span className="font-heading text-lg font-bold tracking-[-0.3px] max-sm:sr-only">DocBox</span>
         </Link>
         <div className="flex items-center gap-2">
-          <StarButton stars={stars} className="py-2" />
+          <StarButton stars={stars} className="py-2" shortOnPhones />
           <a
             href={links.discord}
-            className="press flex items-center gap-2 rounded-xl bg-ink/40 px-4 py-2 text-sm font-semibold ring-1 ring-white/25 hover:bg-ink/60 hover:ring-white/45 max-sm:px-3"
+            className="press flex items-center gap-2 rounded-xl bg-ink/40 ps-3.5 pe-4 py-2 text-sm font-semibold ring-1 ring-white/25 hover:bg-ink/60 hover:ring-white/45 max-sm:px-3"
           >
             <DiscordMark className="size-4" />
             <span className="max-sm:sr-only">Discord</span>

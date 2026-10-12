@@ -9,7 +9,8 @@ const CARD = "overflow-hidden rounded-3xl bg-night/80 ring-1 ring-white/[0.14]";
 export function Features() {
   return (
     <section aria-labelledby="features-title" className="px-3 sm:px-5">
-      <div className="rounded-t-[28px] bg-[linear-gradient(180deg,#e5e5ff_0%,#8f86ff_5%,#4318ff_15%,#24128a_30%,#0a0626_55%,#05030f_100%)] px-4 py-24 sm:px-10">
+      {/* The light band is placed in px, not %, so it stays above the label and heading however tall the section grows. */}
+      <div className="rounded-t-[28px] bg-[linear-gradient(180deg,var(--color-tolopea-100)_0px,#8f86ff_40px,var(--color-tolopea-600)_120px,var(--color-deep)_30%,var(--color-night)_55%,var(--color-ink)_100%)] px-4 py-24 sm:px-10">
         <div className="mx-auto flex max-w-[1040px] flex-col gap-12">
           <header className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
             <div {...reveal()} className="flex flex-col items-start gap-4">
@@ -72,8 +73,7 @@ export function Features() {
                     stay organised
                   </h3>
                   <p className="text-[13px] leading-5 text-muted">
-                    Each folder becomes a named batch with its page count, models and status, ready to re-run when you
-                    add a model.
+                    Each folder becomes a named batch with its page count, models and status, ready to run again.
                   </p>
                 </div>
               </article>
@@ -90,8 +90,7 @@ export function Features() {
                     kept on your disk
                   </h3>
                   <p className="text-[13px] leading-5 text-muted">
-                    Outputs, scores and the original pages sit together in one local library. Nothing is uploaded, so
-                    nothing needs deleting later.
+                    Outputs, scores and the original pages stay together in one library.
                   </p>
                 </div>
               </article>

@@ -17,8 +17,10 @@ export function Closing({ stars }: { stars: number | null }) {
     <section aria-labelledby="closing-title" className="px-3 pt-24 sm:px-5">
       <div className="relative isolate flex flex-col items-center gap-[22px] overflow-hidden rounded-[28px] px-6 py-24 text-center ring-1 ring-white/[0.14] sm:px-10">
         <ClosingAurora />
+        {/* Darkens the aurora under the text: its bright drifts otherwise pass behind the copy. */}
+        <div aria-hidden="true" className="absolute inset-0 bg-night/50" />
         <Eyebrow {...reveal()} className="relative text-white">
-          Free · Windows, macOS &amp; Linux
+          Free · Windows, macOS (Apple Silicon) &amp; Linux
         </Eyebrow>
         <h2
           {...reveal(100)}
