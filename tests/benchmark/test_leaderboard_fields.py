@@ -113,9 +113,11 @@ def test_a_model_running_in_another_process_has_no_memory_figure(fakes, docs, tm
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join([str(tmp_path), os.environ["PYTHONPATH"]]))
     import remote_fake  # noqa: F401 — registers fake-remote here as well as in the worker
 
-    run = benchmarks.run_now(BenchConfig(sources=[docs], models=["fake-good", "fake-remote"]))
+    # Steady takes 0.2 s a page, so the memory sampler sees its worker after start-up: a
+    # worker done in 0.3 s could be sampled only as it started (0.1 MB on macOS CI).
+    run = benchmarks.run_now(BenchConfig(sources=[docs], models=["fake-steady", "fake-remote"]))
     models = {m.model_id: m for m in run.models}
-    assert models["fake-good"].peak_memory_mb > 10 and models["fake-good"].memory_note is None
+    assert models["fake-steady"].peak_memory_mb > 10 and models["fake-steady"].memory_note is None
     assert models["fake-remote"].peak_memory_mb is None
     assert models["fake-remote"].memory_note == ("Runs in another process, so its memory "
                                                  "isn't measured here")
