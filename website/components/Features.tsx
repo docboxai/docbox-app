@@ -33,7 +33,7 @@ export function Features() {
           <div className="flex flex-col gap-4">
             <article {...reveal()} className={`${CARD} flex flex-col lg:h-[420px] lg:flex-row lg:items-center lg:pl-11`}>
               <div className="flex shrink-0 flex-col items-start gap-3.5 px-7 pt-9 lg:w-[360px] lg:p-0">
-                <Eyebrow className="text-tolopea-300">Route</Eyebrow>
+                <Eyebrow className="text-tolopea-300">Test</Eyebrow>
                 <h3 className="font-heading text-[30px] leading-[34px] font-normal tracking-[-0.5px]">
                   One folder in,
                   <br />
@@ -47,7 +47,7 @@ export function Features() {
                   href={links.engines}
                   className="group mt-1.5 flex items-center gap-1.5 rounded-sm text-[13px] font-semibold"
                 >
-                  See how routing works
+                  See which engine to use
                   <ArrowRight
                     aria-hidden="true"
                     className="size-3.5 transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)] group-hover:translate-x-1"
@@ -59,10 +59,11 @@ export function Features() {
               </div>
             </article>
 
+            {/* From lg the two cards sit side by side; until xl each stacks its scene above its text, which would otherwise get ~140px. */}
             <div className="flex flex-col gap-4 lg:flex-row">
               <article
                 {...reveal(100)}
-                className={`${CARD} group flex flex-1 flex-col items-start gap-7 p-8 sm:flex-row sm:items-center`}
+                className={`${CARD} group flex flex-1 flex-col items-start gap-7 p-8 sm:flex-row sm:items-center lg:flex-col lg:items-start xl:flex-row xl:items-center`}
               >
                 <BatchScene />
                 <div className="flex flex-1 flex-col gap-3">
@@ -79,7 +80,7 @@ export function Features() {
               </article>
               <article
                 {...reveal(200)}
-                className={`${CARD} group flex flex-1 flex-col items-start gap-7 p-8 sm:flex-row sm:items-center`}
+                className={`${CARD} group flex flex-1 flex-col items-start gap-7 p-8 sm:flex-row sm:items-center lg:flex-col lg:items-start xl:flex-row xl:items-center`}
               >
                 <KeepScene />
                 <div className="flex flex-1 flex-col gap-3">

@@ -41,7 +41,7 @@ export function WorksWith() {
           ))}
         </ul>
         <p {...reveal(300)} className="text-center text-[13px] leading-5 text-dim">
-          DocBox works with the OCR engines you already use.
+          DocBox tests these OCR engines and models side by side.
         </p>
       </div>
     </section>

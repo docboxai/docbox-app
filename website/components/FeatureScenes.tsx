@@ -121,7 +121,7 @@ export function RouteScene() {
           }
         />
         <div
-          className="absolute h-[176px] w-[276px] rounded-3xl border border-white/25 bg-[linear-gradient(180deg,#7f76ff_0%,#2806ac_100%)]"
+          className="absolute h-[176px] w-[276px] rounded-3xl border border-white/25 bg-[linear-gradient(180deg,var(--color-tolopea-400)_0%,#2806ac_100%)]"
           style={place(186, 214, 3, 1)}
         />
         <ShaderCanvas source={rays} className="absolute h-[270px] w-[260px]" style={place(190, 10, 0, 2)} />
@@ -131,7 +131,7 @@ export function RouteScene() {
           <span className="relative mx-auto size-[46px]">
             <svg viewBox="0 0 46 46" className="absolute inset-0 size-full">
               <path d={GAUGE_TRACK} fill="#ffffff1f" />
-              <path d={GAUGE_ARC} fill="#ffd15c" />
+              <path d={GAUGE_ARC} className="fill-sun" />
             </svg>
             <span className="absolute inset-0 grid place-items-center font-heading text-[13px] font-bold">97</span>
           </span>

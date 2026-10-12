@@ -9,7 +9,7 @@ import { HeroEmblem } from "./HeroEmblem";
 export function Hero({ installers }: { installers: Installers }) {
   return (
     <section aria-labelledby="hero-title" className="px-3 sm:px-5">
-      <div className="overflow-hidden rounded-b-[28px] bg-[linear-gradient(180deg,#05030f_0%,#0a0626_28%,#24128a_52%,#4318ff_72%,#7f76ff_88%,#e5e5ff_100%)] px-6 pt-28 pb-48 lg:min-h-[820px] lg:px-0 lg:pt-[242px] lg:pb-24">
+      <div className="overflow-hidden rounded-b-[28px] bg-[linear-gradient(180deg,var(--color-ink)_0%,var(--color-night)_28%,var(--color-deep)_52%,var(--color-tolopea-600)_72%,var(--color-tolopea-400)_88%,var(--color-tolopea-100)_100%)] px-6 pt-28 pb-48 lg:min-h-[820px] lg:px-0 lg:pt-[242px] lg:pb-24">
         <div className="mx-auto flex max-w-[864px] flex-col items-center gap-10 lg:flex-row lg:justify-between lg:gap-0">
           <div className="flex w-full lg:max-w-[480px] flex-col items-start gap-[22px]">
             <h1

@@ -29,14 +29,14 @@
 
 /* Headings fade from grey on the left to white (pen.dev gradient at 270°). */
 @utility text-fade {
-  background-image: linear-gradient(90deg, #8d88a8 0%, #ffffff 75%);
+  background-image: linear-gradient(90deg, var(--color-dim) 0%, #ffffff 75%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
 @utility text-fade-soft {
-  background-image: linear-gradient(90deg, #b9b4d6 0%, #ffffff 70%);
+  background-image: linear-gradient(90deg, var(--color-muted) 0%, #ffffff 70%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;

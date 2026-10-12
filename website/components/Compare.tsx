@@ -104,7 +104,7 @@ export function Compare() {
 
         <div {...reveal(200)} className="w-full pt-[34px]">
           {/* Side by side only from 1096px: narrower, the reads would wrap mid-token. */}
-          <div className="flex flex-col items-center gap-11 rounded-3xl bg-[#0a0718] p-5 ring-1 ring-white/[0.14] sm:p-9 min-[1096px]:flex-row">
+          <div className="flex flex-col items-center gap-11 rounded-3xl bg-night p-5 ring-1 ring-white/[0.14] sm:p-9 min-[1096px]:flex-row">
             <SourcePage />
 
             <div className="flex w-full min-w-0 flex-1 flex-col">
@@ -136,13 +136,14 @@ export function Compare() {
               <div role="radiogroup" aria-labelledby="compare-title compare-position">
                 {READS.map((read, i) => {
                   const active = i === selected;
+                  // In forced colours transparent borders turn solid, so other rows keep only their divider and the chosen one takes the system highlight.
                   return (
                     <label
                       key={read.model}
                       className={`grid cursor-pointer grid-cols-[1fr_auto] items-center gap-x-4 gap-y-2 border px-3.5 py-[18px] transition-[background-color,border-color,border-radius] duration-150 ease-[cubic-bezier(0.2,0,0,1)] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-[-1px] has-[:focus-visible]:outline-white md:flex md:gap-4 ${
                         active
-                          ? "rounded-xl border-tolopea-400 bg-tolopea-500/15"
-                          : "rounded-none border-transparent border-b-white/[0.12] hover:bg-white/[0.04]"
+                          ? "rounded-xl border-tolopea-400 bg-tolopea-500/15 forced-colors:border-[Highlight]"
+                          : "rounded-none border-transparent border-b-white/[0.12] hover:bg-white/[0.04] forced-colors:border-x-0 forced-colors:border-t-0"
                       }`}
                     >
                       <input

@@ -6,7 +6,7 @@ import { Eyebrow } from "./Eyebrow";
 import { StarButton } from "./StarButton";
 
 const FOOTER_LINKS = [
-  { label: "Models", href: links.engines },
+  { label: "Engine guide", href: links.engines },
   { label: "Docs", href: links.docs },
   { label: "Changelog", href: links.changelog },
   { label: "GitHub", href: links.repo },
@@ -25,14 +25,13 @@ export function Closing({ stars }: { stars: number | null }) {
         <h2
           {...reveal(100)}
           id="closing-title"
-          className="relative font-heading text-[clamp(36px,7vw,54px)] leading-[1.074] font-normal tracking-[-1.2px]"
+          className="relative max-w-[11em] font-heading text-[clamp(32px,7vw,54px)] leading-[1.074] font-normal tracking-[-1.2px] text-balance"
         >
-          Your documents never
-          <br />
-          leave your computer.
+          {/* Balanced instead of a forced break: on phones the break left single words on their own lines. */}
+          Your documents never leave your computer.
         </h2>
         <p {...reveal(200)} className="relative text-[15px] text-mist">
-          Install DocBox, open a folder, and see which model reads it best.
+          Install DocBox, add a few models, then drop in a folder to see which reads it best.
         </p>
         <div {...reveal(300)} className="relative flex flex-wrap items-center justify-center gap-3 pt-2.5">
           <a
