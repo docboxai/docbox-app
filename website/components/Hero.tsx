@@ -23,7 +23,7 @@ export function Hero({ installers }: { installers: Installers }) {
               your documents
             </h1>
             <p {...enter(100)} className="text-base leading-6 text-mist">
-              Test OCR models on your documents without uploading them.
+              Test OCR models on your documents, right on your computer.
             </p>
             <div {...enter(200)} className="pt-2">
               <DownloadButton installers={installers} />
