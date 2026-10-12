@@ -27,7 +27,7 @@ function place(left: number, top: number, rotate = 0, z = 0): CSSProperties {
   return { left, top, rotate: `${rotate}deg`, transformOrigin: "top left", zIndex: z };
 }
 
-// --- 01 Route: the glass folder with score widgets floating out of it ----------------
+// --- Route: the glass folder with score widgets floating out of it -------------------
 
 /** A widget card that drifts by `depth` px across a scroll through the scene. */
 function Widget({
@@ -248,7 +248,7 @@ function SheenLayer({
   );
 }
 
-// --- 02 Batch: a named folder with its pages ------------------------------------------
+// --- Batch: a named folder with its pages ---------------------------------------------
 
 export function BatchScene() {
   return (
@@ -295,7 +295,7 @@ export function BatchScene() {
   );
 }
 
-// --- 03 Keep: everything in one local library -----------------------------------------
+// --- Keep: everything in one local library --------------------------------------------
 
 function MiniCard({ className, style, value, label }: { className: string; style: CSSProperties; value: string; label: string }) {
   return (

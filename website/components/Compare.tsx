@@ -123,7 +123,7 @@ export function Compare() {
 
             <div className="flex w-full min-w-0 flex-1 flex-col">
               <div className="flex items-center justify-between gap-4 pb-4">
-                <p id="compare-position" className="font-mono text-xs text-dim">
+                <p id="compare-position" className="text-xs text-dim">
                   Line 7 of 42 · invoice-0312.pdf
                 </p>
                 <div className="flex gap-1.5">
@@ -198,7 +198,7 @@ export function Compare() {
                   type="button"
                   onClick={() => setDefaultModel(selected)}
                   aria-pressed={isDefault}
-                  className="press rounded-full bg-white px-4 py-2.5 text-[13px] font-semibold text-ink hover:bg-tolopea-100"
+                  className="press rounded-xl bg-white px-4 py-2.5 text-[13px] font-semibold text-ink hover:bg-tolopea-100"
                 >
                   {isDefault ? `${chosen.short} is the default` : `Set ${chosen.short} as default`}
                 </button>

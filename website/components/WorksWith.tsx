@@ -9,7 +9,7 @@ interface Engine {
   mark?: ComponentType<SVGProps<SVGSVGElement>>;
   /** Sized by eye against the 20px names: each mark has its own proportions. */
   markSize?: string;
-  /** Each name is set in its own face, as in the design. */
+  /** Faces and weights vary by name so the row reads as a set of marks. */
   font: string;
 }
 
@@ -23,7 +23,7 @@ const ENGINES: Engine[] = [
   },
   { name: "Tesseract", font: "font-serif text-[23px] font-bold italic" },
   { name: "Ollama", mark: OllamaMark, markSize: "h-[22px] w-[18px]", font: "font-sans text-xl font-semibold" },
-  { name: "MiniCPM-V", mark: MiniCpmMark, markSize: "size-5", font: "font-mono text-lg font-semibold" },
+  { name: "MiniCPM-V", mark: MiniCpmMark, markSize: "size-5", font: "font-sans text-xl font-bold" },
 ];
 
 export function WorksWith() {

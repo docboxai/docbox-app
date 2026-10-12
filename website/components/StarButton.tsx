@@ -9,7 +9,7 @@ export function StarButton({ stars, className }: { stars: number | null; classNa
   return (
     <a
       href={links.repo}
-      className={`press flex items-center gap-2 rounded-full bg-ink/40 ps-[18px] pe-5 text-sm font-semibold ring-1 ring-white/25 hover:bg-ink/60 hover:ring-white/45 ${className}`}
+      className={`press flex items-center gap-2 rounded-xl bg-ink/40 ps-[18px] pe-5 text-sm font-semibold ring-1 ring-white/25 hover:bg-ink/60 hover:ring-white/45 ${className}`}
     >
       <GitHubMark className="size-4" />
       Star on GitHub

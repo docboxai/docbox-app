@@ -1,3 +1,4 @@
+import { ArrowRight } from "lucide-react";
 import { links } from "@/lib/links";
 import { enter } from "@/lib/reveal";
 import { HeroEmblem } from "./HeroEmblem";
@@ -12,15 +13,13 @@ export function Hero({ stars }: { stars: number | null }) {
             <div {...enter(0)}>
               <a
                 href={links.engines}
-                className="group press inline-block rounded-full bg-white/[0.08] px-3 py-1.5 text-xs font-medium text-tolopea-100 ring-1 ring-white/20 hover:bg-white/[0.14] hover:ring-white/35"
+                className="group flex items-center gap-1.5 rounded-sm text-[13px] font-semibold text-tolopea-100 transition-[color] duration-150 ease-out hover:text-white"
               >
-                PaddleOCR-VL is now supported — Learn more{" "}
-                <span
+                PaddleOCR-VL is now supported — Learn more
+                <ArrowRight
                   aria-hidden="true"
-                  className="inline-block transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)] group-hover:translate-x-0.5"
-                >
-                  →
-                </span>
+                  className="size-3.5 transition-transform duration-150 ease-[cubic-bezier(0.2,0,0,1)] group-hover:translate-x-1"
+                />
               </a>
             </div>
             <h1
@@ -41,7 +40,7 @@ export function Hero({ stars }: { stars: number | null }) {
             <div {...enter(300)} className="flex flex-wrap items-center gap-3 pt-1.5">
               <a
                 href={links.download}
-                className="press rounded-full bg-white px-5 py-3 text-sm font-semibold text-ink hover:bg-tolopea-100"
+                className="press rounded-xl bg-white px-5 py-3 text-sm font-semibold text-ink hover:bg-tolopea-100"
               >
                 Download
               </a>
