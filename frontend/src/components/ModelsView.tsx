@@ -80,7 +80,7 @@ function LibraryRow({ model, onChanged, last }: { model: ModelInfo; onChanged: (
             {!model.fit.fits && <p className="text-[13px] text-warning">{model.fit.reasons.join("; ")}</p>}
           </div>
           <div className="flex-[1_1_300px]">
-            <ModelSetupPanel model={model} job={job} />
+            <ModelSetupPanel model={model} job={job} inRow />
           </div>
         </div>
       )}

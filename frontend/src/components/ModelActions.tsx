@@ -83,15 +83,19 @@ export function ModelActionCell({ model, job }: { model: ModelInfo; job: ModelJo
 }
 
 // The full control: progress with its message, the main action, Remove (with an inline
-// confirm) and Use as default. `light` is for purple/blue cards.
+// confirm) and Use as default. `light` is for purple/blue cards. Under a table row, which
+// has its own ModelActionCell and size column, `inRow` leaves out the main action (Install,
+// Pause, Resume, set up) and the size, so they aren't there twice.
 export function ModelSetupPanel({
   model,
   job,
   light = false,
+  inRow = false,
 }: {
   model: ModelInfo;
   job: ModelJob;
   light?: boolean;
+  inRow?: boolean;
 }) {
   const { settings, updateSettings, navigate } = useApp();
   const [confirmRemove, setConfirmRemove] = useState(false);
@@ -135,13 +139,13 @@ export function ModelSetupPanel({
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
-          <span className={cx("mr-auto text-xs", muted)}>{sizeLabel(model)}</span>
-          {busy && (
+          {!inRow && <span className={cx("mr-auto text-xs", muted)}>{sizeLabel(model)}</span>}
+          {busy && !inRow && (
             <Button size="sm" variant={light ? "ink" : "outline"} icon={Pause} disabled={job.phase === "pausing"} onClick={() => void job.pause()}>
               Pause
             </Button>
           )}
-          {job.phase === "paused" && (
+          {job.phase === "paused" && !inRow && (
             <Button size="sm" variant={light ? "ink" : "primary"} icon={Play} onClick={() => void job.start()}>
               Resume
             </Button>
@@ -170,7 +174,7 @@ export function ModelSetupPanel({
               )}
             </>
           )}
-          {job.phase === "idle" && model.status !== "ready" && (
+          {job.phase === "idle" && model.status !== "ready" && !inRow && (
             setupActionLabel(model) ? (
               <Button size="sm" variant={light ? "ink" : "muted"} onClick={() => navigate("platforms")} title="Opens Connections">
                 {setupActionLabel(model)}
