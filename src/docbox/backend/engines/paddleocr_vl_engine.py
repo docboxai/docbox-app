@@ -2,15 +2,15 @@
 document parsing pipeline (`paddleocr.PaddleOCRVL`), verified against paddleocr==3.7.0.
 
 This is a genuinely heavier "nature" of model than the classic PP-OCR det+rec pipelines:
-a ~0.9B-parameter VLM does the recognition step, registered in paddlex's official model
-catalog as `"PaddleOCR-VL"`. It is registered in `models_catalog.py` with correspondingly
+a ~0.9B-parameter VLM does the recognition step (`PaddleOCR-VL-1.6-0.9B` in paddlex's
+official model catalog), after PP-DocLayoutV3 has found the page's layout. It is registered in `models_catalog.py` with correspondingly
 large RAM/disk estimates so the hardware-fit check steers most machines away from it —
 that's the intended UX for a heavy model, not a bug.
 
-Notes verified via source inspection (not a full download+run, given the model's size):
+Notes (checked by downloading and reading a page with paddleocr 3.7.0 / paddlex 3.7.2):
 
 - Cache/env handling is identical to `paddleocr_engine.py`: `PADDLE_PDX_CACHE_HOME` env
-  var, `<cache_root>/official_models/<model_name>/` existence check.
+  var, `<cache_root>/official_models/<folder>/` existence check, for each model in `_MODELS`.
 - `PaddleOCRVL().predict(path)` returns a generator of result objects exposing a
   `.markdown` property (`{"markdown_texts": str, ...}`, from paddlex's `MarkdownMixin`)
   rather than the simple `rec_texts`/`rec_scores` lists the classic pipelines expose —
@@ -32,7 +32,15 @@ from docbox.backend.core.paths import get_models_dir
 from docbox.backend.engines.base import ProgressCallback
 from docbox.backend.schemas import OcrLine, OcrResult
 
-_MODEL_NAME = "PaddleOCR-VL"
+# The pipeline version is pinned so a paddleocr update can't switch models under a
+# download: each version uses its own models, and v1.6 (paddleocr 3.7's default) finds
+# the page layout with PP-DocLayoutV3 and reads with PaddleOCR-VL-1.6.
+_PIPELINE_VERSION = "v1.6"
+# paddlex model names (`official_models[name]`) and the folders they download into.
+_MODELS = {"PP-DocLayoutV3": "PP-DocLayoutV3", "PaddleOCR-VL-1.6-0.9B": "PaddleOCR-VL-1.6"}
+# What DocBox 0.1.1 and earlier downloaded: the first version's reader, which the
+# pipeline never used. Removed once the current models are in.
+_LEGACY_DIRS = ("PaddleOCR-VL",)
 
 
 def _cache_root() -> Path:
@@ -45,8 +53,8 @@ def _set_cache_env() -> None:
     os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(_cache_root()))
 
 
-def _model_dir() -> Path:
-    return _cache_root() / "official_models" / _MODEL_NAME
+def _model_dir(folder: str) -> Path:
+    return _cache_root() / "official_models" / folder
 
 
 class PaddleOcrVlEngine:
@@ -58,7 +66,7 @@ class PaddleOcrVlEngine:
         self._pipeline = None
 
     def is_downloaded(self) -> bool:
-        return _model_dir().exists()
+        return all(_model_dir(folder).exists() for folder in _MODELS.values())
 
     def download(self, progress_cb: ProgressCallback) -> None:
         _set_cache_env()
@@ -70,8 +78,11 @@ class PaddleOcrVlEngine:
         try:
             from paddlex.inference.utils.official_models import official_models
 
-            progress_cb(5.0, f"downloading {_MODEL_NAME} (large VLM, this can take a while)")
-            official_models[_MODEL_NAME]
+            # The layout model is small; the reader is nearly all of the download.
+            progress_cb(2.0, "downloading PP-DocLayoutV3 (page layout)")
+            official_models["PP-DocLayoutV3"]
+            progress_cb(8.0, "downloading PaddleOCR-VL-1.6 (large, this can take a while)")
+            official_models["PaddleOCR-VL-1.6-0.9B"]
             progress_cb(95.0, "finalizing")
         except ImportError:
             progress_cb(5.0, "downloading model")
@@ -79,6 +90,8 @@ class PaddleOcrVlEngine:
 
         if not self.is_downloaded():
             raise RuntimeError("Model download reported success but files are missing on disk")
+        for folder in _LEGACY_DIRS:
+            shutil.rmtree(_model_dir(folder), ignore_errors=True)
 
         progress_cb(100.0, "ready")
 
@@ -87,6 +100,7 @@ class PaddleOcrVlEngine:
         from paddleocr import PaddleOCRVL
 
         return PaddleOCRVL(
+            pipeline_version=_PIPELINE_VERSION,
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
         )
@@ -123,4 +137,5 @@ class PaddleOcrVlEngine:
 
     def delete(self) -> None:
         self._pipeline = None
-        shutil.rmtree(_model_dir(), ignore_errors=True)
+        for folder in (*_MODELS.values(), *_LEGACY_DIRS):
+            shutil.rmtree(_model_dir(folder), ignore_errors=True)

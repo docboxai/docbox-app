@@ -491,7 +491,7 @@ its own transitions, since it sets `translate` and `transition`. See `website/RE
 ### PaddleOCR internals worth knowing before touching `engines/paddleocr_engine.py` or `paddleocr_vl_engine.py`
 
 - Cache location is redirected via the `PADDLE_PDX_CACHE_HOME` env var, set before
-  constructing the pipeline, pointed at DocBox's own `platformdirs` cache dir rather than
+  constructing the pipeline, pointed at `<data>/models/paddlex_cache` rather than
   paddlex's default (the user's home directory).
 - No byte-level download progress from paddlex's downloader — progress is coarse/staged
   (detection model downloading → recognition model downloading → ready), read off
@@ -499,6 +499,11 @@ its own transitions, since it sets `translate` and `transition`. See `website/RE
 - `enable_mkldnn=False` must be passed to the pipeline constructor — without it, CPU
   inference on this paddlepaddle 3.x build crashes with
   `NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support [...]`.
+- PaddleOCR-VL pins `pipeline_version` (`_PIPELINE_VERSION`) and downloads that version's
+  models (`_MODELS`: the layout model and the reader); each version uses different ones,
+  and the pipeline downloads whatever is missing during the first read, with no progress.
+  `tests/backend/test_paddleocr_vl.py` checks them against paddlex's pipeline config. It
+  also needs paddlex's `ocr` extra (in the `paddle` extra), or it refuses to start.
 - Classic PP-OCR pipelines return `rec_texts`/`rec_scores` on the result object;
   PaddleOCR-VL instead exposes `.markdown["markdown_texts"]` via its `MarkdownMixin` —
   the two engine implementations parse results differently for this reason.

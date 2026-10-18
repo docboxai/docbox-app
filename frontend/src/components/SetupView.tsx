@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownRight,
   ArrowLeft,
@@ -348,16 +348,22 @@ export function SetupView() {
   const [selectedEngine, setSelectedEngine] = useState<string | null>(null);
   const { revision, bump } = useApp();
 
+  // Only the latest refresh may set state (see ModelsView).
+  const latest = useRef(0);
   const refresh = useCallback(async () => {
+    const id = ++latest.current;
     setLoading(true);
     setError(null);
     try {
-      setModels(await api.listModels());
+      const list = await api.listModels();
+      if (id === latest.current) setModels(list);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (id === latest.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
-      setLoaded(true);
+      if (id === latest.current) {
+        setLoading(false);
+        setLoaded(true);
+      }
     }
   }, []);
 

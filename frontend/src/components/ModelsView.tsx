@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, Check, ChevronDown, FolderOpen, Search } from "lucide-react";
 import { api, formatBytes, type ModelInfo, type StorageInfo } from "../lib/api";
 import { useApp } from "../lib/app";
@@ -80,7 +80,7 @@ function LibraryRow({ model, onChanged, last }: { model: ModelInfo; onChanged: (
             {!model.fit.fits && <p className="text-[13px] text-warning">{model.fit.reasons.join("; ")}</p>}
           </div>
           <div className="flex-[1_1_300px]">
-            <ModelSetupPanel model={model} job={job} />
+            <ModelSetupPanel model={model} job={job} inRow />
           </div>
         </div>
       )}
@@ -153,16 +153,24 @@ export function ModelsView() {
   const [folderError, setFolderError] = useState<string | null>(null);
   const [folderOpened, setFolderOpened] = useState(false);
 
+  // Only the latest refresh may set state: an older one finishing later would put back a
+  // listing from before a download ended, which shows it still running.
+  const latest = useRef(0);
   const refresh = useCallback(async () => {
+    const id = ++latest.current;
     setError(null);
+    // The list doesn't wait for the storage figures, which take longer to work out.
+    api.engineStorage().then(
+      (info) => id === latest.current && setStorage(info),
+      () => id === latest.current && setStorage(null),
+    );
     try {
-      const [list, info] = await Promise.all([api.listModels(), api.engineStorage().catch(() => null)]);
-      setModels(list);
-      setStorage(info);
+      const list = await api.listModels();
+      if (id === latest.current) setModels(list);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (id === latest.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoaded(true);
+      if (id === latest.current) setLoaded(true);
     }
   }, []);
 

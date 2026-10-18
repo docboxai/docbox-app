@@ -38,6 +38,9 @@ from docbox.backend.engines.tesseract_engine import TesseractEngine
 # recognition (+5.1%), at roughly a tenth of the CPU time for detection, so "Balanced"
 # outranks "Large". Models for one language family keep quality=None.
 
+# A PaddleOCR model's approx_download_mb is its text finder plus its reader, as their
+# folders measure once downloaded (paddlex fetches them uncompressed).
+
 # --- PaddleOCR: mobile tier (small, fast, CPU-friendly) ---------------------------
 
 registry.register(
@@ -55,7 +58,7 @@ registry.register(
             "and runs well on any computer."
         ),
         languages=["en"],
-        approx_download_mb=20,
+        approx_download_mb=12,
         approx_ram_mb=800,
         min_disk_mb=200,
         engine_factory=lambda: PaddleOcrEngine(
@@ -81,7 +84,7 @@ registry.register(
             "the English-only version."
         ),
         languages=["ch", "en"],
-        approx_download_mb=20,
+        approx_download_mb=16,
         approx_ram_mb=800,
         min_disk_mb=200,
         engine_factory=lambda: PaddleOcrEngine(
@@ -109,7 +112,7 @@ registry.register(
             "moderate size and still quick."
         ),
         languages=["ch", "en"],
-        approx_download_mb=90,
+        approx_download_mb=135,
         approx_ram_mb=1200,
         min_disk_mb=300,
         engine_factory=lambda: PaddleOcrEngine(
@@ -136,7 +139,7 @@ registry.register(
             "when Balanced misses English text."
         ),
         languages=["en"],
-        approx_download_mb=170,
+        approx_download_mb=92,
         approx_ram_mb=1500,
         min_disk_mb=400,
         engine_factory=lambda: PaddleOcrEngine(
@@ -151,14 +154,14 @@ registry.register(
 
 _LANGUAGE_FAMILIES = [
     ("paddleocr-latin", "Latin-script European", "latin_PP-OCRv5_mobile_rec",
-     ["fr", "de", "es", "it", "pt", "nl"]),
-    ("paddleocr-cyrillic", "Cyrillic", "cyrillic_PP-OCRv5_mobile_rec", ["ru", "uk", "bg"]),
-    ("paddleocr-arabic", "Arabic", "arabic_PP-OCRv5_mobile_rec", ["ar"]),
-    ("paddleocr-devanagari", "Devanagari", "devanagari_PP-OCRv5_mobile_rec", ["hi", "mr"]),
-    ("paddleocr-korean", "Korean", "korean_PP-OCRv5_mobile_rec", ["ko"]),
+     ["fr", "de", "es", "it", "pt", "nl"], 92),
+    ("paddleocr-cyrillic", "Cyrillic", "cyrillic_PP-OCRv5_mobile_rec", ["ru", "uk", "bg"], 92),
+    ("paddleocr-arabic", "Arabic", "arabic_PP-OCRv5_mobile_rec", ["ar"], 92),
+    ("paddleocr-devanagari", "Devanagari", "devanagari_PP-OCRv5_mobile_rec", ["hi", "mr"], 92),
+    ("paddleocr-korean", "Korean", "korean_PP-OCRv5_mobile_rec", ["ko"], 98),
 ]
 
-for _model_id, _family_label, _rec_name, _langs in _LANGUAGE_FAMILIES:
+for _model_id, _family_label, _rec_name, _langs, _download_mb in _LANGUAGE_FAMILIES:
     registry.register(
         ModelSpec(
             id=_model_id,
@@ -171,7 +174,7 @@ for _model_id, _family_label, _rec_name, _langs in _LANGUAGE_FAMILIES:
                 "as the Large English version."
             ),
             languages=_langs,
-            approx_download_mb=170,
+            approx_download_mb=_download_mb,
             approx_ram_mb=1500,
             min_disk_mb=400,
             engine_factory=lambda det="PP-OCRv5_server_det", rec=_rec_name, mid=_model_id: (
@@ -196,7 +199,7 @@ registry.register(
             "computer, so most laptops will show it as a poor fit."
         ),
         languages=["ch", "en"],
-        approx_download_mb=2000,
+        approx_download_mb=1970,
         approx_ram_mb=6000,
         min_disk_mb=4000,
         engine_factory=lambda: PaddleOcrVlEngine(model_id="paddleocr-vl"),
