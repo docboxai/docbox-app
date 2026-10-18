@@ -23,11 +23,13 @@ to wait for a restart because the engine's native libraries were already loaded.
 
 from __future__ import annotations
 
+import csv
 import importlib
 import importlib.metadata
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -295,20 +297,37 @@ def remove_extra(name: str) -> None:
     _write_state(extras=sorted(installed_extras()), resync_pending=False)
 
 
-def _dist_closure(roots: Iterable[str]) -> set[str]:
+def _normalize(name: str) -> str:
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _installed_dists() -> dict[str, importlib.metadata.Distribution]:
+    """Every installed distribution by normalised name, from one scan of sys.path (looking
+    each one up by name scans it again, which the storage figures did ~100 times)."""
+    found: dict[str, importlib.metadata.Distribution] = {}
+    for dist in importlib.metadata.distributions():
+        name = dist.metadata["Name"]
+        if name:
+            found.setdefault(_normalize(name), dist)  # first on sys.path wins, as for imports
+    return found
+
+
+def _dist_closure(
+    roots: Iterable[str], installed: dict[str, importlib.metadata.Distribution] | None = None
+) -> set[str]:
     """The installed distributions `roots` (requirement strings) need, following extras."""
+    installed = _installed_dists() if installed is None else installed
     seen: set[tuple[str, str]] = set()  # (distribution, extra or "")
     names: set[str] = set()
     stack = [(r.name, extra) for r in map(Requirement, roots) for extra in ("", *r.extras)]
     while stack:
         name, extra = stack.pop()
-        name = name.lower().replace("_", "-")
+        name = _normalize(name)
         if (name, extra) in seen:
             continue
         seen.add((name, extra))
-        try:
-            dist = importlib.metadata.distribution(name)
-        except importlib.metadata.PackageNotFoundError:
+        dist = installed.get(name)
+        if dist is None:
             continue
         names.add(name)
         for req_str in dist.requires or []:
@@ -338,27 +357,35 @@ def _base_root_dists() -> list[str]:
     ]
 
 
-def _exclusive_dists(name: str) -> set[str]:
+def _exclusive_dists(
+    name: str, installed: dict[str, importlib.metadata.Distribution] | None = None
+) -> set[str]:
     """Distributions only this extra needs: not the base install's, not another
     installed extra's (engines, or the MCP server's when it's installed)."""
+    installed = _installed_dists() if installed is None else installed
     others = set().union(
-        *(_dist_closure(_EXTRA_ROOT_DISTS[e]) for e in installed_extras() if e != name),
-        _dist_closure(_NON_ENGINE_ROOT_DISTS),
+        *(_dist_closure(_EXTRA_ROOT_DISTS[e], installed)
+          for e in installed_extras() if e != name),
+        _dist_closure(_NON_ENGINE_ROOT_DISTS, installed),
     )
-    return _dist_closure(_EXTRA_ROOT_DISTS[name]) - _dist_closure(_base_root_dists()) - others
+    return (_dist_closure(_EXTRA_ROOT_DISTS[name], installed)
+            - _dist_closure(_base_root_dists(), installed) - others)
 
 
-def _dist_bytes(name: str) -> int:
-    try:
-        dist = importlib.metadata.distribution(name)
-    except importlib.metadata.PackageNotFoundError:
-        return 0
+def _dist_bytes(dist: importlib.metadata.Distribution) -> int:
+    """Its files' total size, from the sizes its RECORD lists. `dist.files` checks every
+    file exists and stat-ing them again took seconds for Paddle's ~17,000 files."""
     total = 0
-    for f in dist.files or []:
-        try:
-            total += Path(dist.locate_file(f)).stat().st_size
-        except OSError:
-            pass
+    for row in csv.reader((dist.read_text("RECORD") or "").splitlines()):
+        if len(row) < 3:
+            continue
+        if row[2].isdigit():
+            total += int(row[2])
+        else:  # RECORD lists no size for itself (and older installers for some files)
+            try:
+                total += Path(dist.locate_file(row[0])).stat().st_size
+            except OSError:
+                pass
     return total
 
 
@@ -366,4 +393,5 @@ def extra_package_bytes(name: str) -> int:
     """Disk used by packages that only this extra needs (shared deps aren't counted)."""
     if not extra_installed(name):
         return 0
-    return sum(_dist_bytes(d) for d in _exclusive_dists(name))
+    installed = _installed_dists()
+    return sum(_dist_bytes(installed[d]) for d in _exclusive_dists(name, installed))
