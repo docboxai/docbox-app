@@ -191,7 +191,9 @@ Installed builds bundle the backend source + `pyproject.toml` + `uv.lock` +
 skipped when the venv exists and `runtime/uv.lock.installed` matches the bundled lock.
 The backend then runs with `PYTHONPATH=<resources>/backend/src` (the project is never
 installed: its dir is read-only under Program Files), `DOCBOX_RUNTIME_MODE=managed`,
-`DOCBOX_UV`, `DOCBOX_DATA_DIR`, and the same `UV_*` env vars. Logs go to
+`DOCBOX_UV`, `DOCBOX_DATA_DIR`, `PYTHONPYCACHEPREFIX=<data>/runtime/pycache` (bytecode
+written next to the bundled source would outlive the uninstaller), and the same `UV_*`
+env vars. Logs go to
 `<data>/logs/{setup,backend}.log`. When uv or the backend ends before it's ready, the shell
 adds how it ended (exit status, or the signal of a crash, which prints nothing itself) to
 that log and to the error screen.
@@ -237,6 +239,16 @@ opener capability lists every URL allowed, compared as exact strings, so they're
 way a browser normalises them (`https://build.nvidia.com/`, trailing slash) and the app's
 own links are constants in `lib/external.ts`; `tests/backend/test_external_links.py` checks
 the allow-list against those, the prerequisite download pages and `ocrbench.json`.
+
+Uninstalling leaves the choice to the user. On Windows, Tauri's NSIS uninstaller asks
+whether to delete the data too (a box, unticked by default; silent uninstalls and updates
+never delete it), and `src-tauri/windows/hooks.nsh` adds what Tauri doesn't know about:
+leftover bytecode in `<install>\backend` always, and the CLI's fallback data folder
+(`%LOCALAPPDATA%\docbox\DocBox`) only when the box is ticked. `src-tauri/windows/English.nsh`
+is Tauri's own English strings with a clearer label for that box: copy it again from
+`crates/tauri-bundler/src/bundle/windows/nsis/languages/` whenever `TAURI_CLI_VERSION`
+changes. The MSI and the macOS and Linux packages never delete data; the wiki's
+Troubleshooting page says where it is. Results in `Documents/DocBox` are never deleted.
 
 Child processes (the bootstrap `uv`, the backend) go through `outside_appimage` in
 `main.rs`: the AppImage launcher's PYTHONHOME/PYTHONPATH/LD_LIBRARY_PATH point into its

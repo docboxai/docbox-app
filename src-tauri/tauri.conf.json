@@ -54,7 +54,9 @@
         "installMode": "currentUser",
         "installerIcon": "icons/icon.ico",
         "headerImage": "icons/installer/nsis-header.bmp",
-        "sidebarImage": "icons/installer/nsis-sidebar.bmp"
+        "sidebarImage": "icons/installer/nsis-sidebar.bmp",
+        "installerHooks": "windows/hooks.nsh",
+        "customLanguageFiles": { "English": "windows/English.nsh" }
       },
       "wix": {
         "bannerPath": "icons/installer/wix-banner.bmp",
