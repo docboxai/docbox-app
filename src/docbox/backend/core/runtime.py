@@ -54,9 +54,10 @@ _LOADED_ROOTS: dict[str, tuple[str, ...]] = {
     "easyocr": ("torch", "easyocr"),
 }
 
-# Top-level distributions each extra pulls in directly (mirrors pyproject.toml).
+# What each extra pulls in directly (mirrors pyproject.toml), as requirements: an extra
+# of one of them counts too.
 _EXTRA_ROOT_DISTS: dict[str, tuple[str, ...]] = {
-    "paddle": ("paddleocr", "paddlepaddle"),
+    "paddle": ("paddleocr", "paddlepaddle", "paddlex[ocr]"),
     "easyocr": ("easyocr", "torch", "torchvision"),
 }
 
@@ -295,23 +296,27 @@ def remove_extra(name: str) -> None:
 
 
 def _dist_closure(roots: Iterable[str]) -> set[str]:
-    seen: set[str] = set()
-    stack = list(roots)
+    """The installed distributions `roots` (requirement strings) need, following extras."""
+    seen: set[tuple[str, str]] = set()  # (distribution, extra or "")
+    names: set[str] = set()
+    stack = [(r.name, extra) for r in map(Requirement, roots) for extra in ("", *r.extras)]
     while stack:
-        name = stack.pop().lower().replace("_", "-")
-        if name in seen:
+        name, extra = stack.pop()
+        name = name.lower().replace("_", "-")
+        if (name, extra) in seen:
             continue
+        seen.add((name, extra))
         try:
             dist = importlib.metadata.distribution(name)
         except importlib.metadata.PackageNotFoundError:
             continue
-        seen.add(name)
+        names.add(name)
         for req_str in dist.requires or []:
             req = Requirement(req_str)
-            if req.marker is not None and not req.marker.evaluate({"extra": ""}):
+            if req.marker is not None and not req.marker.evaluate({"extra": extra}):
                 continue
-            stack.append(req.name)
-    return seen
+            stack += [(req.name, e) for e in ("", *req.extras)]
+    return names
 
 
 def _base_root_dists() -> list[str]:
@@ -319,7 +324,7 @@ def _base_root_dists() -> list[str]:
 
     try:
         data = tomllib.loads((project_dir() / "pyproject.toml").read_text(encoding="utf-8"))
-        return [Requirement(r).name for r in data.get("project", {}).get("dependencies", [])]
+        return list(data.get("project", {}).get("dependencies", []))
     except OSError:
         pass
     # Tool mode: no pyproject.toml, but the installed distribution lists the same thing.
@@ -328,7 +333,7 @@ def _base_root_dists() -> list[str]:
     except importlib.metadata.PackageNotFoundError:
         return []
     return [
-        r.name for r in map(Requirement, declared)
+        str(r) for r in map(Requirement, declared)
         if r.marker is None or r.marker.evaluate({"extra": ""})
     ]
 

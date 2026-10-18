@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import json
 
 import pytest
 
 from docbox.backend.core import history
+from docbox.cli import main as cli_main
 from docbox.cli.main import main
 
 FAKE = "test-fake"
@@ -66,6 +68,35 @@ def test_remove_without_yes_and_without_a_terminal_refuses(capsys, installed_fak
     assert code == 1
     assert json.loads(err)["error"]["code"] == "invalid"
     assert installed_fake.engine_factory().is_downloaded()
+
+
+def test_remove_refuses_when_stdin_says_terminal_but_ends(capsys, installed_fake, monkeypatch):
+    # Windows reports NUL as a terminal, so `docbox models remove x < NUL` reaches input().
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda _prompt: (_ for _ in ()).throw(EOFError))
+    code, _, err = run_json(capsys, "models", "remove", FAKE)
+    assert code == 1
+    assert json.loads(err)["error"]["code"] == "invalid"
+    assert installed_fake.engine_factory().is_downloaded()
+
+
+def test_output_that_cant_show_a_tick_doesnt_fail(monkeypatch) -> None:
+    """Written to a pipe or file on Windows, stdout is cp1252, which has no ✓: a read
+    finished and saved its file, then `docbox` failed with UnicodeEncodeError."""
+    stdout = io.TextIOWrapper(io.BytesIO(), encoding="cp1252")
+    monkeypatch.setattr("sys.stdout", stdout)
+    monkeypatch.setattr("sys.stderr", io.TextIOWrapper(io.BytesIO(), encoding="cp1252"))
+
+    def fake_main(**_kwargs) -> int:
+        print("✓ invoice.pdf → invoice.txt")
+        return 0
+
+    monkeypatch.setattr(cli_main, "main", fake_main)
+    with pytest.raises(SystemExit) as exc:
+        cli_main.run()
+    assert exc.value.code == 0
+    stdout.flush()
+    assert stdout.buffer.getvalue().rstrip() == b"? invoice.pdf ? invoice.txt"
 
 
 def test_unknown_model_is_not_found(capsys, data_dir) -> None:

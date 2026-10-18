@@ -78,6 +78,11 @@ def main(argv: list[str] | None = None, *, private_stdout: bool = False) -> int:
 
 
 def run() -> None:
+    # Written to a pipe or a file on Windows, stdout uses the ANSI code page, which has no
+    # ✓ or →: replace what it can't encode rather than fail after the work is done.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="replace")
     sys.exit(main(private_stdout=True))
 
 
