@@ -4,14 +4,20 @@ where each model reads best (issue #23)."""
 from __future__ import annotations
 
 import io
+import itertools
+import sys
 import time
+import tomllib
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from docbox.backend.core import reader
+from docbox.backend import models_catalog
+from docbox.backend.core import config_store, engine_cache, reader
+from docbox.backend.core.paths import get_models_dir
 from docbox.backend.core.registry import (
     ModelSpec,
     check_fit,
@@ -51,7 +57,7 @@ def test_pages_are_read_whole_and_tall_screenshots_in_strips() -> None:
     strips = _strips(1920, 13768)  # the screenshot from issue #23
     assert len(strips) > 1
     assert strips[0][1] == 0 and strips[-1][3] == 13768
-    for (_, top, right, bottom), (_, next_top, _, _) in zip(strips, strips[1:]):
+    for (_, top, right, bottom), (_, next_top, _, _) in itertools.pairwise(strips):
         assert right == 1920
         assert bottom - next_top == paddleocr_engine._OVERLAP
     for left, top, right, bottom in strips:
@@ -216,7 +222,80 @@ def test_read_is_refused_when_the_memory_isnt_free(
     assert "only 1 GB is free" in body["error"]
 
 
+def test_one_page_ocr_is_refused_over_the_ram_limit(client: TestClient, heavy_spec) -> None:
+    client.patch("/api/settings", json={"ram_limit_gb": 3})
+    resp = client.post(
+        "/api/ocr/run",
+        files={"file": ("a.png", _png(), "image/png")},
+        data={"model_id": "test-heavy", "page": "0"},
+    )
+    assert resp.status_code == 409
+    assert "over your 3 GB limit" in resp.json()["detail"]
+
+
+def test_models_running_elsewhere_are_never_refused_for_memory(monkeypatch) -> None:
+    class _Elsewhere(_Engine):
+        runs_in_process = False  # Ollama, the cloud, an engine container
+
+    spec = _spec(id="test-elsewhere", approx_ram_mb=64_000, engine_factory=_Elsewhere)
+    config_store.set_ram_limit_gb(1)
+    monkeypatch.setattr(
+        reader.psutil, "virtual_memory", lambda: SimpleNamespace(available=0)
+    )
+    reader.check_memory(spec)  # doesn't raise
+
+
+def test_a_loaded_model_skips_the_free_memory_check(heavy_spec, monkeypatch) -> None:
+    # Its memory is already taken, so what's free now doesn't matter; the limit still does.
+    monkeypatch.setattr(
+        reader.psutil, "virtual_memory", lambda: SimpleNamespace(available=1 * 2**30)
+    )
+    monkeypatch.setattr(engine_cache, "loaded_model_ids", lambda: ["test-heavy"])
+    reader.check_memory(heavy_spec)
+
+    config_store.set_ram_limit_gb(3)
+    with pytest.raises(reader.NotRunnable, match="over your 3 GB limit"):
+        reader.check_memory(heavy_spec)
+
+
+# --- what keeps paddle's memory down ------------------------------------------------------
+
+
+def test_paddle_pipelines_are_built_with_onednn(monkeypatch) -> None:
+    """Without oneDNN paddle takes about 5 GB per megapixel (issue #23)."""
+    built: dict = {}
+    fake = SimpleNamespace(PaddleOCR=lambda **kwargs: built.update(kwargs))
+    monkeypatch.setitem(sys.modules, "paddleocr", fake)
+    monkeypatch.setenv("PADDLE_PDX_CACHE_HOME", str(get_models_dir() / "paddlex_cache"))
+
+    PaddleOcrEngine(model_id="m", det_model_name="d", rec_model_name="r")._build_pipeline()
+    assert built["enable_mkldnn"] is True
+
+
+def test_paddle_stays_below_3_3_which_breaks_onednn() -> None:
+    root = Path(__file__).resolve().parents[2]
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text())
+    assert "paddlepaddle>=3.2,<3.3" in pyproject["project"]["optional-dependencies"]["paddle"]
+    lock = tomllib.loads((root / "uv.lock").read_text())
+    versions = {p["version"] for p in lock["package"] if p["name"] == "paddlepaddle"}
+    assert versions and all(v.startswith("3.2.") for v in versions), versions
+
+
 # --- where models read best --------------------------------------------------------------
+
+
+
+def test_models_api_carries_figures_and_device(client: TestClient) -> None:
+    models = {m["id"]: m for m in client.get("/api/models").json()}
+    large = models["paddleocr-accurate-en"]
+    assert large["ram_measured"] is True
+    assert large["approx_ram_mb"] == 3200
+    assert large["cpu_page_seconds"] == 5.1
+    assert large["figures_source"] == models_catalog._PADDLE_FIGURES
+    assert (large["device"]["runs_on"], large["device"]["preferred"]) == ("cpu", "gpu")
+
+    mobile = models["paddleocr-mobile-en"]
+    assert mobile["device"]["preferred"] == "cpu" and mobile["device"]["note"] is None
 
 
 def test_gpu_models_say_how_much_faster_a_graphics_card_would_be() -> None:

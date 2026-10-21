@@ -62,6 +62,16 @@ async def test_device_models_and_settings(fake_model, data_dir) -> None:
         assert "not_found" in await call_error(client, "get_model", model_id="nope")
 
 
+
+async def test_ram_limit_marks_big_models_as_not_fitting(data_dir) -> None:
+    async with Client(server) as client:
+        settings = await call(client, "update_settings", ram_limit_gb=2)
+        assert settings["ram_limit_gb"] == 2
+        models = {m["id"]: m for m in await call(client, "list_models")}
+        assert models["paddleocr-accurate-en"]["fit"]["summary"] == "Over your RAM limit"
+        settings = await call(client, "update_settings", ram_limit_gb=0)
+        assert settings["ram_limit_gb"] is None
+
 async def test_install_poll_read_and_remove(fake_model, sample_image, tmp_path) -> None:
     async with Client(server) as client:
         job = await call(client, "install_model", model_id="test-fake")
