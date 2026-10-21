@@ -8,10 +8,16 @@ from collections.abc import Callable
 
 import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
 from docbox.backend import platforms
-from docbox.backend.core import engine_cache, locks, prerequisites, runtime
+from docbox.backend.core import config_store, engine_cache, locks, prerequisites, runtime
 from docbox.backend.core.device import get_device_capabilities
 from docbox.backend.core.jobs import DownloadJob, JobPaused, job_store
-from docbox.backend.core.registry import ModelSpec, check_fit, recommend, registry
+from docbox.backend.core.registry import (
+    ModelSpec,
+    check_fit,
+    inference_device,
+    recommend,
+    registry,
+)
 from docbox.backend.engines.base import NotDeletableError, ProgressCallback
 from docbox.backend.engines.remote_engine import EngineServiceError
 from docbox.backend.schemas import DownloadStatus, ModelInfo
@@ -36,10 +42,11 @@ class _Snapshot:
 
     def __init__(self) -> None:
         self.caps = get_device_capabilities()
+        self.ram_limit_gb = config_store.get_ram_limit_gb()
         self.extras = runtime.installed_extras()
         self._prereqs: dict[str, bool] = {}
         # Only the built-in catalog is ranked; Ollama and cloud models never are.
-        pick = recommend(registry.list(), self.caps)
+        pick = recommend(registry.list(), self.caps, self.ram_limit_gb)
         self.recommended_id = pick.id if pick else None
 
     def prereq_ok(self, prereq_id: str) -> bool:
@@ -86,13 +93,17 @@ def _to_model_info(spec: ModelSpec, snap: _Snapshot) -> ModelInfo:
         languages=spec.languages,
         approx_download_mb=spec.approx_download_mb,
         approx_ram_mb=spec.approx_ram_mb,
+        ram_measured=spec.ram_measured,
+        cpu_page_seconds=spec.cpu_page_seconds,
+        figures_source=spec.figures_source,
         min_disk_mb=spec.min_disk_mb,
+        device=inference_device(spec, snap.caps),
         downloaded=downloaded,
         engine_installed=engine_installed,
         status=status,
         requires_extra=spec.requires_extra,
         prerequisite=spec.prerequisite,
-        fit=check_fit(spec, snap.caps),
+        fit=check_fit(spec, snap.caps, snap.ram_limit_gb),
         recommended=spec.id == snap.recommended_id,
         active_job=job_status(job) if (job := job_store.unfinished_for(spec.id)) else None,
     )
