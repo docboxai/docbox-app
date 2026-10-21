@@ -29,7 +29,10 @@ dependencies = [
 docbox = "docbox.cli.main:run"
 
 [project.optional-dependencies]
-paddle = ["paddleocr>=2.9", "paddlepaddle>=2.6"]
+# paddlepaddle 3.3 breaks oneDNN (`ConvertPirAttribute2RuntimeAttribute not support`), and
+# without oneDNN its CPU convolutions take ~5 GB per megapixel of image: a tall screenshot
+# ran out of memory (issue #23). 3.2 runs the same models with oneDNN in a fraction of that.
+paddle = ["paddleocr>=2.9", "paddlepaddle>=3.2,<3.3"]
 # torch/torchvision are listed directly so [tool.uv.sources] can pin them to the CPU-only
 # index (sources only apply to direct dependencies); PyPI's Linux torch wheel bundles CUDA
 # and is several times larger.

@@ -32,12 +32,19 @@ def _run(cmd: list[str]) -> str | None:
     return out.stdout if out.returncode == 0 else None
 
 
-def _nvidia_gpu() -> str | None:
+@functools.lru_cache(maxsize=1)
+def _nvidia_gpu() -> tuple[str, float] | None:
+    """The first NVIDIA card's name and memory in GB, when its driver is installed."""
     if not shutil.which("nvidia-smi"):
         return None
-    out = _run(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"])
-    names = [line.strip() for line in (out or "").splitlines() if line.strip()]
-    return names[0] if names else None
+    out = _run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
+    for line in (out or "").splitlines():
+        name, _, memory_mb = line.rpartition(",")
+        try:
+            return name.strip(), round(float(memory_mb) / 1024, 1)
+        except ValueError:
+            continue
+    return None
 
 
 def _linux_gpu() -> str | None:
@@ -71,9 +78,9 @@ def detect_gpu() -> str | None:
     """The main graphics card's name, or None when there's no dedicated one to report.
     Hardware doesn't change while the app runs, and probing spawns processes, so the
     answer is computed once."""
-    gpu = _nvidia_gpu()
-    if gpu:
-        return gpu
+    nvidia = _nvidia_gpu()
+    if nvidia:
+        return nvidia[0]
     if sys.platform == "win32":
         return _windows_gpu()
     if sys.platform.startswith("linux"):
@@ -101,6 +108,7 @@ def get_device_capabilities() -> DeviceCapabilities:
         disk_free_gb=round(disk.free / _BYTES_PER_GB, 2),
         disk_total_gb=round(disk.total / _BYTES_PER_GB, 2),
         gpu_name=detect_gpu(),
+        gpu_memory_gb=nvidia[1] if (nvidia := _nvidia_gpu()) else None,
         os_name=_os_name(),
         arch=platform.machine().lower() or "unknown",
     )

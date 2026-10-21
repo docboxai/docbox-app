@@ -306,18 +306,21 @@ def get_read(
 
 @server.tool(annotations=_READ_ONLY)
 def get_settings() -> Settings:
-    """The default model, the cloud-engine switch and the output folder."""
+    """The default model, the cloud-engine switch, the RAM limit and the output folder."""
     return settings_service.get_settings()
 
 
 @server.tool(annotations=_CHANGES)
 def update_settings(
     default_model_id: str | None = None, cloud_enabled: bool | None = None,
+    ram_limit_gb: float | None = None,
 ) -> Settings:
-    """Change the default model ("" clears it) and/or the cloud-engine switch (NVIDIA NIM
-    sends images to NVIDIA's cloud: only turn it on when the user asks)."""
+    """Change the default model ("" clears it), the cloud-engine switch (NVIDIA NIM
+    sends images to NVIDIA's cloud: only turn it on when the user asks) and/or the RAM
+    limit, the most memory a model may take while reading (0 removes it)."""
     return _call(settings_service.update_settings,
-                 SettingsUpdate(default_model_id=default_model_id, cloud_enabled=cloud_enabled))
+                 SettingsUpdate(default_model_id=default_model_id, cloud_enabled=cloud_enabled,
+                                ram_limit_gb=ram_limit_gb))
 
 
 # --- benchmarks -------------------------------------------------------------------------
