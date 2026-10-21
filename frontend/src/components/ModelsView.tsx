@@ -3,7 +3,8 @@ import { ArrowUpRight, Check, ChevronDown, FolderOpen, Search } from "lucide-rea
 import { api, formatBytes, type ModelInfo, type StorageInfo } from "../lib/api";
 import { useApp } from "../lib/app";
 import { ENGINE_LABELS } from "../lib/engineMeta";
-import { formatGb } from "../lib/format";
+import { openInBrowser } from "../lib/external";
+import { formatGb, formatSeconds } from "../lib/format";
 import { ON_BACKEND_COMPUTER } from "../lib/host";
 import { languageNames } from "../lib/languages";
 import { useModelJob } from "../lib/useModelJob";
@@ -22,6 +23,51 @@ function FitChip({ model }: { model: ModelInfo }) {
     <Chip tone={ok ? "success" : "warning"} title={why || undefined}>
       {model.fit.summary}
     </Chip>
+  );
+}
+
+// What a model takes and how fast it reads: measured figures say so, estimates say so too.
+function ModelFigures({ model }: { model: ModelInfo }) {
+  const cloud = isCloud(model);
+  const ram = formatGb(model.approx_ram_mb / 1024);
+  const { device } = model;
+  return (
+    <>
+      <p className="text-[13px] text-fg-muted">
+        {languageNames(model.languages)}
+        {cloud
+          ? " · runs in NVIDIA's cloud"
+          : model.ram_measured
+            ? ` · takes up to ${ram} of RAM to read a page`
+            : ` · takes about ${ram} of RAM (an estimate)`}
+        {model.cpu_page_seconds !== null &&
+          ` · ${formatSeconds(model.cpu_page_seconds)} a page on a 6-core processor`}
+      </p>
+      {!cloud && (
+        <p className="text-[13px] text-fg-muted">
+          {device.runs_on === "gpu"
+            ? "Reads on this computer's graphics card."
+            : device.preferred === "gpu"
+              ? device.note ?? "Reads best on a graphics card."
+              : "Made for the processor: a graphics card wouldn't make it noticeably faster."}
+          {model.figures_source && (
+            <>
+              {" "}
+              <a
+                href={model.figures_source}
+                target="_blank"
+                rel="noreferrer"
+                onClick={openInBrowser}
+                className="inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-fg"
+              >
+                Published sizes and speeds
+                <ArrowUpRight aria-hidden="true" className="h-3 w-3" />
+              </a>
+            </>
+          )}
+        </p>
+      )}
+    </>
   );
 }
 
@@ -73,10 +119,7 @@ function LibraryRow({ model, onChanged, last }: { model: ModelInfo; onChanged: (
         <div id={detailId} className="flex flex-wrap gap-x-8 gap-y-3 px-4 pt-1 pb-4 pl-[38px]">
           <div className="flex min-w-0 flex-[1_1_320px] flex-col gap-1.5">
             <p className="max-w-[70ch] text-sm leading-relaxed text-fg-muted">{model.description}</p>
-            <p className="text-[13px] text-fg-muted">
-              {languageNames(model.languages)} · needs about {formatGb(model.approx_ram_mb / 1024)} RAM
-              {isCloud(model) && " · runs in NVIDIA's cloud"}
-            </p>
+            <ModelFigures model={model} />
             {!model.fit.fits && <p className="text-[13px] text-warning">{model.fit.reasons.join("; ")}</p>}
           </div>
           <div className="flex-[1_1_300px]">

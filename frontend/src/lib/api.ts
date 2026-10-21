@@ -8,6 +8,8 @@ export interface DeviceCapabilities {
   disk_free_gb: number;
   disk_total_gb: number;
   gpu_name: string | null;
+  // An NVIDIA card's memory, when its driver is installed.
+  gpu_memory_gb: number | null;
   os_name: string;
   arch: string;
 }
@@ -21,6 +23,18 @@ export interface FitResult {
   summary: string;
 }
 
+export type Device = "cpu" | "gpu";
+
+export interface InferenceDevice {
+  runs_on: Device;
+  // Where it reads best: "gpu" when a graphics card makes it several times faster.
+  preferred: Device;
+  // How many times faster on a graphics card, from the model's published timings.
+  gpu_speedup: number | null;
+  // What would make it faster here; null when it's already at its best.
+  note: string | null;
+}
+
 // What one click on the model does; see ModelStatus in backend/schemas.py.
 export type ModelStatus = "ready" | "needs_download" | "needs_engine" | "needs_prerequisite";
 
@@ -31,8 +45,15 @@ export interface ModelInfo {
   description: string;
   languages: string[];
   approx_download_mb: number;
+  // The most memory it takes while reading a page.
   approx_ram_mb: number;
+  // Whether approx_ram_mb and cpu_page_seconds were measured, not estimated.
+  ram_measured: boolean;
+  cpu_page_seconds: number | null;
+  // Where its published sizes and speeds come from.
+  figures_source: string | null;
   min_disk_mb: number;
+  device: InferenceDevice;
   downloaded: boolean;
   engine_installed: boolean;
   status: ModelStatus;
@@ -116,6 +137,16 @@ export interface Settings {
   default_model_id: string | null;
   cloud_enabled: boolean;
   output_dir: string;
+  // The most memory a model may take while reading; null: no limit.
+  ram_limit_gb: number | null;
+}
+
+// Fields left out are unchanged; default_model_id "" clears the default, ram_limit_gb 0
+// removes the limit.
+export interface SettingsUpdate {
+  default_model_id?: string;
+  cloud_enabled?: boolean;
+  ram_limit_gb?: number;
 }
 
 export type OutputFormat = "txt" | "md" | "pdf" | "json";
@@ -334,7 +365,7 @@ export const api = {
   deviceCapabilities: () => request<DeviceCapabilities>("/api/device/capabilities"),
   listModels: () => request<ModelInfo[]>("/api/models"),
   getSettings: () => request<Settings>("/api/settings"),
-  updateSettings: (patch: { default_model_id?: string; cloud_enabled?: boolean }) =>
+  updateSettings: (patch: SettingsUpdate) =>
     request<Settings>("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
