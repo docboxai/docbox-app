@@ -6,9 +6,13 @@ import math
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import IntEnum
+from typing import TYPE_CHECKING
 
 from docbox.backend.engines.base import OCREngine
 from docbox.backend.schemas import Device, DeviceCapabilities, FitResult, InferenceDevice
+
+if TYPE_CHECKING:
+    from docbox.backend.core.gpu import Choice as GpuChoice
 
 # Leave headroom for the OS and other apps rather than judging fit against 100% of
 # available RAM.
@@ -51,8 +55,9 @@ class ModelSpec:
     requires_extra: str | None = None
     # external program the user must have first: "tesseract" | "ollama" (core/prerequisites.py)
     prerequisite: str | None = None
-    # A large vision model that is slow on a CPU. DocBox's own engines always run on the
-    # CPU; `runs_on_gpu` marks engines that use a graphics card by themselves (Ollama).
+    # A large vision model that is slow on a CPU. `runs_on_gpu` marks engines that use a
+    # graphics card by themselves (Ollama); DocBox's own read on one only with their
+    # graphics-card build installed (core/gpu.py).
     slow_on_cpu: bool = False
     runs_on_gpu: bool = False
     tier: Tier = Tier.LIGHT
@@ -171,18 +176,30 @@ def recommend(
     return max(candidates, key=lambda s: s.quality or 0, default=None)
 
 
-def inference_device(spec: ModelSpec, caps: DeviceCapabilities) -> InferenceDevice:
+def inference_device(
+    spec: ModelSpec, caps: DeviceCapabilities, choice: GpuChoice | None = None
+) -> InferenceDevice:
     """Where the model reads here, where it reads best, and what would make it faster.
-    DocBox's own engines run on the processor; only engines that bring their own GPU
-    support (Ollama) use a graphics card."""
-    on_gpu = spec.runs_on_gpu and _has_dedicated_gpu(caps)
+    `choice` is core/gpu.py's answer for an engine with a graphics-card build (PaddleOCR,
+    EasyOCR); without one, only engines that bring their own GPU support (Ollama) use the
+    graphics card."""
+    if choice is not None:
+        on_gpu = choice.device == "gpu"
+    else:
+        on_gpu = spec.runs_on_gpu and _has_dedicated_gpu(caps)
     note = None
     if spec.preferred_device == "gpu" and not on_gpu:
         faster = f"about {spec.gpu_speedup:g}× faster" if spec.gpu_speedup else "faster"
-        if caps.gpu_memory_gb:
+        if choice is not None and choice.note:
+            note = f"Reads {faster} on a graphics card. {choice.note}"
+        elif choice is not None and choice.setting == "cpu":
+            note = None  # the user put it on the processor
+        elif choice is not None:
+            note = f"Reads {faster} on an NVIDIA graphics card; here it runs on the processor."
+        elif caps.gpu_memory_gb:
             note = (
                 f"Reads {faster} on a graphics card such as this computer's {caps.gpu_name}, "
-                "but DocBox runs it on the processor for now."
+                "but its engine runs on the processor."
             )
         elif spec.runs_on_gpu:
             note = f"Reads {faster} on a dedicated graphics card, which this computer lacks."
@@ -190,6 +207,8 @@ def inference_device(spec: ModelSpec, caps: DeviceCapabilities) -> InferenceDevi
             note = f"Reads {faster} on an NVIDIA graphics card; here it runs on the processor."
     return InferenceDevice(
         runs_on="gpu" if on_gpu else "cpu",
+        setting=choice.setting if choice is not None else "auto",
+        gpu_capable=choice is not None,
         preferred=spec.preferred_device,
         gpu_speedup=spec.gpu_speedup,
         note=note,

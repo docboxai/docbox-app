@@ -19,6 +19,13 @@ Three modes:
 `state.json` (in the runtime dir) records the installed extras so the Tauri shell can
 re-sync them after an app update ships a new `uv.lock`, and carries removals that had
 to wait for a restart because the engine's native libraries were already loaded.
+
+PaddleOCR and EasyOCR also have a graphics-card build (`GPU_BUILDS`: the `paddle-gpu` and
+`easyocr-gpu` extras, CUDA 12.6), installed in place of the CPU one only when the user
+asks (`switch_build`). Each pair installs the same modules, so they're uv conflicts and a
+switch is an exact sync; `installed_extras()` keeps naming the engine ("paddle") whichever
+build it has, `build_of()` says which, and `synced_extras()` (what state.json records)
+names the build ("paddle-gpu").
 """
 
 from __future__ import annotations
@@ -47,6 +54,19 @@ EXTRAS: dict[str, tuple[str, str]] = {
     "easyocr": ("EasyOCR engine (PyTorch)", "easyocr"),
 }
 
+# Engine -> its graphics-card build. Windows and Linux on x86_64 only (gpu_builds_supported);
+# only one of them at a time (pyproject.toml's conflicts).
+GPU_BUILDS: dict[str, str] = {"paddle": "paddle-gpu", "easyocr": "easyocr-gpu"}
+# What the graphics-card build downloads beyond the CPU one, in MB: the wheels uv.lock adds
+# for it (Paddle's Linux build pulls NVIDIA's CUDA libraries, ~3.4 GB of it; on Windows it
+# gets the same libraries as pyproject.toml lists them; torch's CUDA wheel is ~2.4 GB).
+GPU_DOWNLOAD_MB: dict[tuple[str, str], int] = {
+    ("paddle", "linux"): 3700,
+    ("paddle", "win32"): 2200,
+    ("easyocr", "linux"): 2900,
+    ("easyocr", "win32"): 2500,
+}
+
 # Native-extension modules that, once imported, keep DLLs/.so files open — on Windows
 # those files can't be deleted until the process exits.
 _LOADED_ROOTS: dict[str, tuple[str, ...]] = {
@@ -58,6 +78,22 @@ _LOADED_ROOTS: dict[str, tuple[str, ...]] = {
 _EXTRA_ROOT_DISTS: dict[str, tuple[str, ...]] = {
     "paddle": ("paddleocr", "paddlepaddle"),
     "easyocr": ("easyocr", "torch", "torchvision"),
+}
+_GPU_ROOT_DISTS: dict[str, tuple[str, ...]] = {
+    "paddle": (
+        "paddleocr", "paddlepaddle-gpu",
+        # Listed directly on Windows; on Linux paddlepaddle-gpu depends on them.
+        "nvidia-cuda-runtime-cu12", "nvidia-cuda-nvrtc-cu12", "nvidia-cublas-cu12",
+        "nvidia-cudnn-cu12", "nvidia-cufft-cu12", "nvidia-curand-cu12",
+        "nvidia-cusolver-cu12", "nvidia-cusparse-cu12", "nvidia-nvjitlink-cu12",
+    ),
+    "easyocr": ("easyocr", "torch", "torchvision"),
+}
+# Distributions a switch between builds replaces (tool mode uninstalls them first: the
+# two Paddle builds are differently named distributions of the same `paddle` module).
+_SWAPPED_DISTS: dict[str, tuple[str, ...]] = {
+    "paddle": ("paddlepaddle", "paddlepaddle-gpu"),
+    "easyocr": ("torch", "torchvision"),
 }
 
 # What the `agents` extra installs (the MCP server). Not an engine DocBox installs or
@@ -91,8 +127,34 @@ def _managed() -> bool:
 
 
 _PINS = Path(__file__).resolve().parent / "pins"
-# PyTorch's CPU-only wheels (the `+cpu` pins); mirrors [[tool.uv.index]] in pyproject.toml.
+# The package indexes in pyproject.toml's [[tool.uv.index]]: PyTorch's CPU-only wheels (the
+# `+cpu` pins), and the CUDA 12.6 wheels of PyTorch and Paddle for the graphics-card builds.
 _TORCH_CPU_INDEX = "https://download.pytorch.org/whl/cpu"
+_GPU_INDEXES = (
+    "https://download.pytorch.org/whl/cu126",
+    "https://www.paddlepaddle.org.cn/packages/stable/cu126/",
+)
+
+
+def gpu_builds_supported() -> bool:
+    """Whether the engines' graphics-card builds exist for this system."""
+    import platform
+
+    return sys.platform in ("win32", "linux") and platform.machine().lower() in (
+        "x86_64", "amd64",
+    )
+
+
+def gpu_download_mb(name: str) -> int:
+    return GPU_DOWNLOAD_MB.get((name, "win32" if sys.platform == "win32" else "linux"), 0)
+
+
+def _pins_for(extra: str) -> Path:
+    """Tool mode's pins for one extra: a graphics-card build's are exported apart, since
+    uv.lock pins torch to +cpu for one and +cu126 for the other."""
+    if extra in GPU_BUILDS.values():
+        return _PINS / f"constraints-{extra}.txt"
+    return _PINS / "constraints.txt"
 
 
 def _has_project() -> bool:
@@ -133,6 +195,41 @@ def installed_extras() -> set[str]:
 
 def extra_installed(name: str) -> bool:
     return name in installed_extras()
+
+
+def _dist_version(name: str) -> str | None:
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def build_of(name: str) -> str | None:
+    """"gpu" or "cpu": which build of an engine is installed; None when it isn't."""
+    if not extra_installed(name):
+        return None
+    if name == "paddle":
+        return "gpu" if _dist_version("paddlepaddle-gpu") else "cpu"
+    if name == "easyocr":
+        return "gpu" if "+cu" in (_dist_version("torch") or "") else "cpu"
+    return "cpu"
+
+
+def synced_extras() -> set[str]:
+    """The pyproject extras installed: each engine's, by the build it has."""
+    return {
+        GPU_BUILDS[name] if build_of(name) == "gpu" else name for name in installed_extras()
+    }
+
+
+def _family(extra: str) -> str:
+    """The engine a build belongs to ("paddle-gpu" -> "paddle")."""
+    return next((name for name, gpu in GPU_BUILDS.items() if gpu == extra), extra)
+
+
+def state_engines() -> set[str]:
+    """The engines state.json says the managed env should have (by engine, not build)."""
+    return {_family(e) for e in read_state().get("extras", [])}
 
 
 def _state_path() -> Path:
@@ -192,11 +289,13 @@ def pip_install_command(name: str) -> list[str]:
     reqs = _extra_requirements(name)
     if not reqs:
         raise EngineInstallError(f"This docbox install doesn't declare the '{name}' extra")
+    indexes = _GPU_INDEXES if name in GPU_BUILDS.values() else (_TORCH_CPU_INDEX,)
     return [
         _uv() or "uv", "pip", "install", "--python", sys.executable,
-        "--constraints", str(_PINS / "constraints.txt"),
+        "--constraints", str(_pins_for(name)),
         "--overrides", str(_PINS / "overrides.txt"),
-        "--extra-index-url", _TORCH_CPU_INDEX, "--index-strategy", "unsafe-best-match",
+        *(arg for url in indexes for arg in ("--extra-index-url", url)),
+        "--index-strategy", "unsafe-best-match",
         *reqs,
     ]
 
@@ -257,14 +356,72 @@ def ensure_extra(name: str, progress_cb: ProgressCallback) -> None:
 
     if not extra_installed(name):
         raise EngineInstallError(f"{EXTRAS[name][0]} installed but still can't be imported")
-    _write_state(extras=sorted(installed_extras()))
+    _write_state(extras=sorted(synced_extras()))
+    progress_cb(100.0, "installed")
+
+
+class GpuBuildTaken(EngineInstallError):
+    """Another engine's graphics-card build is installed; only one can be."""
+
+
+def switch_build(name: str, build: str, progress_cb: ProgressCallback) -> None:
+    """Install an engine's graphics-card build ("gpu") or CPU build ("cpu") in place of the
+    other (or of nothing, when the engine isn't installed yet)."""
+    if name not in GPU_BUILDS or build not in ("cpu", "gpu"):
+        raise EngineInstallError(f"No {build} build of {name}")
+    if build == "gpu" and not gpu_builds_supported():
+        raise EngineInstallError(
+            "The graphics-card builds are for Windows and Linux on x86_64 only."
+        )
+    current = build_of(name)
+    if current == build:
+        progress_cb(100.0, "already installed")
+        return
+    target = GPU_BUILDS[name] if build == "gpu" else name
+    others = synced_extras() - {name, GPU_BUILDS[name]}
+    taken = [e for e in others if build == "gpu" and e in GPU_BUILDS.values()]
+    if taken:
+        raise GpuBuildTaken(
+            f"{EXTRAS[_family(taken[0])][0]} already uses the graphics card, and only one "
+            "engine can: switch it back to the processor first."
+        )
+    label = EXTRAS[name][0]
+    where = "the graphics card" if build == "gpu" else "the processor"
+    if current is not None and any(mod in sys.modules for mod in _LOADED_ROOTS[name]):
+        if _managed():
+            _write_state(extras=sorted(others | {target}), resync_pending=True)
+            raise RemovalNeedsRestart(
+                f"{label} is in use; it switches to {where} the next time DocBox starts."
+            )
+        raise RemovalNeedsRestart(
+            f"{label} is loaded in the running backend; restart it, then retry."
+        )
+    if not can_install():
+        raise EngineInstallError("DocBox can't modify its packages here (no `uv` available).")
+
+    if mode() == "tool":
+        if current is not None:
+            run_streaming(
+                [_uv() or "uv", "pip", "uninstall", "--python", sys.executable,
+                 *_SWAPPED_DISTS[name]],
+                lambda _p, _m: None, failure="Package removal failed",
+            )
+        run_streaming(pip_install_command(target), progress_cb)
+    else:
+        # Exact, so the other build's packages go; every other engine is listed, so its
+        # packages stay.
+        run_streaming(sync_command(others | {target}, inexact=False), progress_cb)
+
+    if build_of(name) != build:
+        raise EngineInstallError(f"{label} for {where} installed but still can't be imported")
+    _write_state(extras=sorted(synced_extras()), resync_pending=False)
     progress_cb(100.0, "installed")
 
 
 def remove_extra(name: str) -> None:
     if name not in EXTRAS:
         raise EngineInstallError(f"Unknown engine package set: {name}")
-    remaining = installed_extras() - {name}
+    remaining = synced_extras() - {name, GPU_BUILDS.get(name, name)}
 
     if any(mod in sys.modules for mod in _LOADED_ROOTS[name]):
         if _managed():
@@ -291,7 +448,14 @@ def remove_extra(name: str) -> None:
             sync_command(remaining, inexact=False), lambda _p, _m: None,
             failure="Package removal failed",
         )
-    _write_state(extras=sorted(installed_extras()), resync_pending=False)
+    _write_state(extras=sorted(synced_extras()), resync_pending=False)
+
+
+def _root_dists(name: str) -> tuple[str, ...]:
+    """The distributions an engine's installed build pulls in directly."""
+    if build_of(name) == "gpu":
+        return _GPU_ROOT_DISTS[name]
+    return _EXTRA_ROOT_DISTS[name]
 
 
 def _dist_closure(roots: Iterable[str]) -> set[str]:
@@ -337,10 +501,10 @@ def _exclusive_dists(name: str) -> set[str]:
     """Distributions only this extra needs: not the base install's, not another
     installed extra's (engines, or the MCP server's when it's installed)."""
     others = set().union(
-        *(_dist_closure(_EXTRA_ROOT_DISTS[e]) for e in installed_extras() if e != name),
+        *(_dist_closure(_root_dists(e)) for e in installed_extras() if e != name),
         _dist_closure(_NON_ENGINE_ROOT_DISTS),
     )
-    return _dist_closure(_EXTRA_ROOT_DISTS[name]) - _dist_closure(_base_root_dists()) - others
+    return _dist_closure(_root_dists(name)) - _dist_closure(_base_root_dists()) - others
 
 
 def _dist_bytes(name: str) -> int:

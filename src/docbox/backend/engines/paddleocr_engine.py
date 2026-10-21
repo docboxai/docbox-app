@@ -30,6 +30,10 @@ Verified against paddleocr==3.7.0 / paddlex (installed via `uv sync`):
   text of a tall screenshot gets too small to find (a 1920x13768 one read 232 lines whole,
   449 in strips). `_strips()` cuts such images, and very large ones, into overlapping
   full-resolution strips, which also caps the detector's memory at about a page's worth.
+- On a graphics card (`use_device("gpu")`, with the `paddle-gpu` build installed; core/gpu.py
+  decides) the pipeline gets `device="gpu:0"`. If the card fails while loading or on the
+  first page, or runs out of memory on any page, the engine rebuilds itself on the
+  processor and reads that page again (`_fall_back`).
 """
 
 from __future__ import annotations
@@ -43,6 +47,7 @@ from PIL import Image
 
 from docbox.backend.core.paths import get_models_dir
 from docbox.backend.engines.base import ProgressCallback
+from docbox.backend.engines.cuda import add_nvidia_dll_dirs
 from docbox.backend.schemas import OcrLine, OcrResult
 
 
@@ -56,6 +61,21 @@ def _cache_root() -> Path:
 
 def _set_cache_env() -> None:
     os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(_cache_root()))
+    add_nvidia_dll_dirs()
+
+
+def check_paddle_cuda() -> None:
+    """Raise unless Paddle is the CUDA build and sees a graphics card."""
+    import paddle
+
+    if not paddle.device.is_compiled_with_cuda():
+        raise RuntimeError("the installed Paddle is its CPU build")
+    if paddle.device.cuda.device_count() < 1:
+        raise RuntimeError("Paddle found no CUDA graphics card")
+
+
+def paddle_device(device: str) -> str:
+    return "gpu:0" if device == "gpu" else "cpu"
 
 
 def _model_dir(model_name: str) -> Path:
@@ -113,8 +133,7 @@ def _same_line(a: OcrLine, b: OcrLine) -> bool:
 
 class PaddleOcrEngine:
     """A PaddleOCR (PP-OCR) detection + recognition pipeline for a specific det/rec
-    model pair. CPU-only for v1; `device` is a forward-compat slot for a future
-    `"cuda"` value."""
+    model pair, on the processor or (`use_device("gpu")`) the graphics card."""
 
     def __init__(
         self,
@@ -129,6 +148,16 @@ class PaddleOcrEngine:
         self._rec_model_name = rec_model_name
         self._device = device
         self._ocr = None
+        self._pages_read = 0
+
+    def use_device(self, device: str) -> None:
+        if device != self._device:
+            self._device = device
+            self._ocr = None
+
+    @property
+    def device(self) -> str:
+        return self._device
 
     def is_downloaded(self) -> bool:
         return (
@@ -168,13 +197,17 @@ class PaddleOcrEngine:
         _set_cache_env()
         from paddleocr import PaddleOCR
 
+        if self._device == "gpu":
+            check_paddle_cuda()
         return PaddleOCR(
             text_detection_model_name=self._det_model_name,
             text_recognition_model_name=self._rec_model_name,
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
             use_textline_orientation=False,
-            enable_mkldnn=True,
+            device=paddle_device(self._device),
+            # oneDNN is the processor's; on the card it doesn't apply.
+            enable_mkldnn=self._device == "cpu",
         )
 
     def load(self) -> None:
@@ -187,7 +220,27 @@ class PaddleOcrEngine:
     def run(self, image: Image.Image) -> OcrResult:
         if self._ocr is None:
             self.load()
+        try:
+            result = self._run_strips(image)
+        except Exception as exc:
+            from docbox.backend.core import gpu
 
+            if self._device != "gpu" or (self._pages_read and not gpu.is_out_of_memory(exc)):
+                raise
+            self._fall_back(exc)
+            result = self._run_strips(image)
+        self._pages_read += 1
+        return result
+
+    def _fall_back(self, exc: BaseException) -> None:
+        """Rebuild on the processor after the graphics card failed, and say why."""
+        from docbox.backend.core import gpu
+
+        gpu.record_fallback(self._model_id, gpu.fallback_message(exc))
+        self.use_device("cpu")
+        self.load()
+
+    def _run_strips(self, image: Image.Image) -> OcrResult:
         strips = _strips(*image.size)
         lines: list[OcrLine] = []
         previous: list[OcrLine] = []  # what the strip before this one kept

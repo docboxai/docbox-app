@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowUpRight, Check, ChevronDown, FolderOpen, Search } from "lucide-react";
-import { api, formatBytes, type ModelInfo, type StorageInfo } from "../lib/api";
+import { api, formatBytes, type DevicePreference, type ModelInfo, type StorageInfo } from "../lib/api";
 import { useApp } from "../lib/app";
 import { ENGINE_LABELS } from "../lib/engineMeta";
 import { openInBrowser } from "../lib/external";
@@ -25,6 +25,37 @@ function FitChip({ model }: { model: ModelInfo }) {
     </Chip>
   );
 }
+
+// Where one model reads, whatever the Device view's setting says for the rest. Only for
+// engines with a graphics-card build; "auto" follows the global setting again.
+// Saving the setting bumps the app's revision, which refetches the list.
+function DeviceSelect({ model }: { model: ModelInfo }) {
+  const { settings, updateSettings } = useApp();
+  const own = settings?.model_devices[model.id] ?? "auto";
+  const global = settings?.device_preference ?? "auto";
+  const change = (value: DevicePreference) => void updateSettings({ model_devices: { [model.id]: value } });
+  return (
+    <label className="relative inline-flex items-center gap-2 text-[13px] text-fg-muted">
+      Reads on
+      <select
+        value={own}
+        onChange={(e) => change(e.target.value as DevicePreference)}
+        className="h-8 appearance-none rounded-xl bg-surface pr-8 pl-3 text-[13px] text-fg ring-1 ring-line ring-inset outline-none focus:ring-secondary"
+      >
+        <option value="auto">Like the rest ({DEVICE_LABELS[global].toLowerCase()})</option>
+        <option value="gpu">{DEVICE_LABELS.gpu}</option>
+        <option value="cpu">{DEVICE_LABELS.cpu}</option>
+      </select>
+      <ChevronDown aria-hidden="true" className="pointer-events-none absolute top-2 right-2.5 h-4 w-4 text-fg-muted" />
+    </label>
+  );
+}
+
+const DEVICE_LABELS: Record<DevicePreference, string> = {
+  auto: "Automatic",
+  gpu: "Graphics card",
+  cpu: "Processor",
+};
 
 // What a model takes and how fast it reads: measured figures say so, estimates say so too.
 function ModelFigures({ model }: { model: ModelInfo }) {
@@ -67,6 +98,7 @@ function ModelFigures({ model }: { model: ModelInfo }) {
           )}
         </p>
       )}
+      {device.gpu_capable && <DeviceSelect model={model} />}
     </>
   );
 }

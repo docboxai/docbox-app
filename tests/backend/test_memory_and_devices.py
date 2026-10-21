@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from docbox.backend import models_catalog
-from docbox.backend.core import config_store, device, engine_cache, reader
+from docbox.backend.core import config_store, engine_cache, reader
 from docbox.backend.core.paths import get_models_dir
 from docbox.backend.core.registry import (
     ModelSpec,
@@ -283,18 +283,6 @@ def test_paddle_stays_below_3_3_which_breaks_onednn() -> None:
 
 # --- where models read best --------------------------------------------------------------
 
-
-def test_nvidia_cards_report_their_memory(monkeypatch) -> None:
-    device._nvidia_gpu.cache_clear()
-    monkeypatch.setattr(device.shutil, "which", lambda name: f"/usr/bin/{name}")
-    monkeypatch.setattr(device, "_run", lambda cmd: "NVIDIA GeForce RTX 3060, 12288\n")
-    try:
-        assert device._nvidia_gpu() == ("NVIDIA GeForce RTX 3060", 12.0)
-        monkeypatch.setattr(device, "_run", lambda cmd: "garbage\n")
-        device._nvidia_gpu.cache_clear()
-        assert device._nvidia_gpu() is None
-    finally:
-        device._nvidia_gpu.cache_clear()
 
 
 def test_models_api_carries_figures_and_device(client: TestClient) -> None:

@@ -47,10 +47,13 @@ Without installing: `{"command": "uvx", "args": ["--from", "docbox[agents] @ git
 | `get_install_status(job_id)` | Poll until `done` / `error` |
 | `remove_model(model_id)` | Deletes a model's files (destructive) |
 | `list_engines` / `remove_engine(engine)` | Engine packages and their disk use / uninstall (destructive) |
+| `get_gpu` | The NVIDIA card, whether DocBox's engines can read on it (and why not), each engine's build (`cpu` / `gpu`) and its download size |
+| `switch_engine_build(engine, build)` | Installs an engine's graphics-card or processor build in place of the other (2–4 GB for `gpu`: ask the user); returns a job |
+| `get_build_status(job_id)` | Poll until `done` / `error` |
 | `read_file(path, model_id?, format?, include_lines?, use_pdf_text?, max_chars?)` | Reads a file of up to 5 pages, saves the text like the app, returns it (at most `max_chars`; `next_page` says where `get_read` continues) |
 | `start_read(path, model_id?, format?, use_pdf_text?)` | Starts reading a file of any length in the background; returns its `read_id` at once |
 | `get_read(read_id, from_page?, max_chars?, include_lines?)` | Poll until `done` / `error`; then its text, whole pages from `from_page` while they fit in `max_chars` |
-| `get_settings` / `update_settings(default_model_id?, cloud_enabled?, ram_limit_gb?)` | Default model, cloud switch, RAM limit (0 removes it) |
+| `get_settings` / `update_settings(default_model_id?, cloud_enabled?, ram_limit_gb?, device_preference?, model_devices?)` | Default model, cloud switch, RAM limit (0 removes it), where models read (`auto` / `cpu` / `gpu`, globally and per model) |
 | `start_benchmark(paths, models?, name?, recursive?, install_missing?, ignore_case?)` | Starts a benchmark; returns its id at once |
 | `get_benchmark(run_id)` | State, progress and the live leaderboard |
 | `get_benchmark_page(run_id, file_id, page?, against?)` | Every model's reading of one page, mistakes marked |

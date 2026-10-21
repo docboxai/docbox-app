@@ -289,6 +289,8 @@ docbox models install paddleocr-mobile-en        # engine + model, one step
 docbox read scans/ --model paddleocr-mobile-en --format md --recursive
 docbox read report.pdf --ocr-all                 # OCR pages that already carry text too
 docbox settings set default-model paddleocr-mobile-en
+docbox engines gpu                               # NVIDIA card: can DocBox's engines use it?
+docbox engines build paddle gpu                  # PaddleOCR's graphics-card build (2-4 GB)
 ```
 
 ### Benchmark the models on your own documents

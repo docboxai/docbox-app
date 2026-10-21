@@ -17,6 +17,9 @@ Notes verified via source inspection (not a full download+run, given the model's
   this pipeline parses whole-document layout (headings, paragraphs, tables) into
   markdown, not a flat list of text lines, so line-level confidence isn't available here
   and `OcrLine.confidence` is left `None`.
+- Devices work as in `paddleocr_engine.py`: `device="gpu:0"` on the graphics card, and back
+  to the processor when the card fails to load it or on the first page, or runs out of
+  memory.
 """
 
 from __future__ import annotations
@@ -30,6 +33,8 @@ from PIL import Image
 
 from docbox.backend.core.paths import get_models_dir
 from docbox.backend.engines.base import ProgressCallback
+from docbox.backend.engines.cuda import add_nvidia_dll_dirs
+from docbox.backend.engines.paddleocr_engine import check_paddle_cuda, paddle_device
 from docbox.backend.schemas import OcrLine, OcrResult
 
 _MODEL_NAME = "PaddleOCR-VL"
@@ -43,6 +48,7 @@ def _cache_root() -> Path:
 
 def _set_cache_env() -> None:
     os.environ.setdefault("PADDLE_PDX_CACHE_HOME", str(_cache_root()))
+    add_nvidia_dll_dirs()
 
 
 def _model_dir() -> Path:
@@ -50,12 +56,23 @@ def _model_dir() -> Path:
 
 
 class PaddleOcrVlEngine:
-    """PaddleOCR-VL layout+VLM document parsing pipeline. CPU-only for v1."""
+    """PaddleOCR-VL layout+VLM document parsing pipeline, on the processor or (with
+    `use_device("gpu")`) the graphics card."""
 
     def __init__(self, *, model_id: str, device: str = "cpu") -> None:
         self._model_id = model_id
         self._device = device
         self._pipeline = None
+        self._pages_read = 0
+
+    def use_device(self, device: str) -> None:
+        if device != self._device:
+            self._device = device
+            self._pipeline = None
+
+    @property
+    def device(self) -> str:
+        return self._device
 
     def is_downloaded(self) -> bool:
         return _model_dir().exists()
@@ -86,9 +103,12 @@ class PaddleOcrVlEngine:
         _set_cache_env()
         from paddleocr import PaddleOCRVL
 
+        if self._device == "gpu":
+            check_paddle_cuda()
         return PaddleOCRVL(
             use_doc_orientation_classify=False,
             use_doc_unwarping=False,
+            device=paddle_device(self._device),
         )
 
     def load(self) -> None:
@@ -105,7 +125,20 @@ class PaddleOcrVlEngine:
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir) / "input.png"
             image.save(tmp_path)
-            results = list(self._pipeline.predict(str(tmp_path)))
+            try:
+                results = list(self._pipeline.predict(str(tmp_path)))
+            except Exception as exc:
+                from docbox.backend.core import gpu
+
+                if self._device != "gpu" or (
+                    self._pages_read and not gpu.is_out_of_memory(exc)
+                ):
+                    raise
+                gpu.record_fallback(self._model_id, gpu.fallback_message(exc))
+                self.use_device("cpu")
+                self.load()
+                results = list(self._pipeline.predict(str(tmp_path)))
+        self._pages_read += 1
 
         lines: list[OcrLine] = []
         for res in results:

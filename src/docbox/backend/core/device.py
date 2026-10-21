@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import functools
 import platform
+import re
 import shutil
 import subprocess
 import sys
+from dataclasses import dataclass
 
 import psutil
 
@@ -15,6 +17,7 @@ from docbox.backend.schemas import DeviceCapabilities
 
 _BYTES_PER_GB = 1024**3
 _PROBE_TIMEOUT_S = 4.0
+_CSV = "--format=csv,noheader,nounits"
 
 
 def _run(cmd: list[str]) -> str | None:
@@ -32,19 +35,62 @@ def _run(cmd: list[str]) -> str | None:
     return out.stdout if out.returncode == 0 else None
 
 
+@dataclass(frozen=True)
+class NvidiaGpu:
+    name: str
+    memory_gb: float
+    driver_version: str | None
+    # The newest CUDA the driver runs, from nvidia-smi's banner ("12.6"); None if unknown.
+    cuda_version: str | None
+    # "8.6"; None when the driver is too old to report it.
+    compute_capability: str | None
+
+
+def _cuda_version() -> str | None:
+    match = re.search(r"CUDA Version:\s*([\d.]+)", _run(["nvidia-smi"]) or "")
+    return match.group(1) if match else None
+
+
 @functools.lru_cache(maxsize=1)
-def _nvidia_gpu() -> tuple[str, float] | None:
-    """The first NVIDIA card's name and memory in GB, when its driver is installed."""
+def nvidia_gpu() -> NvidiaGpu | None:
+    """The first NVIDIA card, when its driver is installed. Cached: it doesn't change while
+    the app runs (its free memory does: gpu_free_memory_gb)."""
     if not shutil.which("nvidia-smi"):
         return None
-    out = _run(["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"])
+    fields = "name,memory.total,driver_version"
+    # compute_cap is newer than some drivers; without it the query fails as a whole.
+    out = _run(["nvidia-smi", f"--query-gpu={fields},compute_cap", _CSV])
+    with_cap = out is not None
+    if out is None:
+        out = _run(["nvidia-smi", f"--query-gpu={fields}", _CSV])
     for line in (out or "").splitlines():
-        name, _, memory_mb = line.rpartition(",")
+        parts = [p.strip() for p in line.split(",")]
+        if with_cap:
+            *parts, cap = parts
+        else:
+            cap = None
+        name, memory_mb, driver = ", ".join(parts[:-2]), parts[-2], parts[-1]
         try:
-            return name.strip(), round(float(memory_mb) / 1024, 1)
+            memory_gb = round(float(memory_mb) / 1024, 1)
         except ValueError:
             continue
+        return NvidiaGpu(
+            name=name, memory_gb=memory_gb, driver_version=driver or None,
+            cuda_version=_cuda_version(),
+            compute_capability=cap if cap and cap[0].isdigit() else None,
+        )
     return None
+
+
+def gpu_free_memory_gb() -> float | None:
+    """The NVIDIA card's free memory right now, or None without one."""
+    if nvidia_gpu() is None:
+        return None
+    out = _run(["nvidia-smi", "--query-gpu=memory.free", _CSV]) or ""
+    try:
+        return round(float(out.splitlines()[0]) / 1024, 2)
+    except (IndexError, ValueError):
+        return None
 
 
 def _linux_gpu() -> str | None:
@@ -78,9 +124,9 @@ def detect_gpu() -> str | None:
     """The main graphics card's name, or None when there's no dedicated one to report.
     Hardware doesn't change while the app runs, and probing spawns processes, so the
     answer is computed once."""
-    nvidia = _nvidia_gpu()
+    nvidia = nvidia_gpu()
     if nvidia:
-        return nvidia[0]
+        return nvidia.name
     if sys.platform == "win32":
         return _windows_gpu()
     if sys.platform.startswith("linux"):
@@ -108,7 +154,7 @@ def get_device_capabilities() -> DeviceCapabilities:
         disk_free_gb=round(disk.free / _BYTES_PER_GB, 2),
         disk_total_gb=round(disk.total / _BYTES_PER_GB, 2),
         gpu_name=detect_gpu(),
-        gpu_memory_gb=nvidia[1] if (nvidia := _nvidia_gpu()) else None,
+        gpu_memory_gb=nvidia.memory_gb if (nvidia := nvidia_gpu()) else None,
         os_name=_os_name(),
         arch=platform.machine().lower() or "unknown",
     )
