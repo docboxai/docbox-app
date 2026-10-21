@@ -37,11 +37,18 @@ class FitResult(BaseModel):
 
 
 Device = Literal["cpu", "gpu"]
+# Where the user wants models to read (settings): "auto" puts the models that read best on
+# a graphics card there, when this computer can (core/gpu.py).
+DevicePreference = Literal["auto", "cpu", "gpu"]
 
 
 class InferenceDevice(BaseModel):
     # Where this model reads on this computer.
     runs_on: Device
+    # The setting deciding it: this model's own, else the global one.
+    setting: DevicePreference = "auto"
+    # Whether its engine has a graphics-card build DocBox can install (PaddleOCR, EasyOCR).
+    gpu_capable: bool = False
     # Where it reads best: "gpu" for models a graphics card makes several times faster,
     # "cpu" for ones that are already quick on the processor.
     preferred: Device
@@ -157,6 +164,43 @@ class EngineStorage(BaseModel):
     removal_pending: bool
 
 
+class EngineGpuBuild(BaseModel):
+    # The engine (pyproject extra of its CPU build: "paddle", "easyocr").
+    id: str
+    name: str
+    # Which build is installed; None: the engine isn't installed.
+    installed: Device | None
+    # Download size of the graphics-card build's packages on this system.
+    gpu_download_mb: int
+    # Why it can't switch now (another engine has the card, no uv, ...), or None.
+    blocked: str | None = None
+    # A switch that waits for DocBox to restart (the engine was in use).
+    pending_restart: bool = False
+    # The running or last switch, polled like a model install.
+    job: DownloadStatus | None = None
+
+
+class GpuStatus(BaseModel):
+    """Whether DocBox's own engines can read on this computer's graphics card."""
+
+    usable: bool
+    # Why not, in a sentence, when it isn't.
+    reason: str | None = None
+    name: str | None = None
+    driver_version: str | None = None
+    # The newest CUDA the driver runs, and the one DocBox's graphics-card builds need.
+    cuda_version: str | None = None
+    cuda_required: str
+    compute_capability: str | None = None
+    memory_total_gb: float | None = None
+    memory_free_gb: float | None = None
+    engines: list[EngineGpuBuild] = []
+
+
+class EngineBuildRequest(BaseModel):
+    build: Device
+
+
 class StorageInfo(BaseModel):
     data_dir: str
     # Everything under the models dir: every engine's weights plus Tesseract's language
@@ -177,6 +221,9 @@ class Settings(BaseModel):
     output_dir: str
     # The most memory a model may take while reading; None: no limit beyond what's free.
     ram_limit_gb: float | None = None
+    # Where models read (core/gpu.py), and models set otherwise than that.
+    device_preference: DevicePreference = "auto"
+    model_devices: dict[str, Device] = {}
 
 
 class SettingsUpdate(BaseModel):
@@ -185,6 +232,9 @@ class SettingsUpdate(BaseModel):
     cloud_enabled: bool | None = None
     # 0 removes the limit.
     ram_limit_gb: float | None = None
+    device_preference: DevicePreference | None = None
+    # Merged into the saved ones; "auto" makes a model follow device_preference again.
+    model_devices: dict[str, DevicePreference] | None = None
 
 
 OutputFormat = Literal["txt", "md", "pdf", "json"]

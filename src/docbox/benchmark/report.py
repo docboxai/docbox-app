@@ -82,6 +82,7 @@ def summarize(run: BenchRun, results: list[PageResult], refs: References) -> Ben
             median_seconds_per_page=round(statistics.median(seconds), 3) if seconds else None,
             peak_memory_mb=model.peak_memory_mb,
             memory_note=model.memory_note,
+            device=model.device,
             mean_confidence=round(statistics.fmean(confidences), 4) if confidences else None,
         )
         if scored and ok:

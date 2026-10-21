@@ -49,6 +49,8 @@ class ModelRun(BaseModel):
     # Why there's no memory figure, when the model runs in another program's process
     # (Ollama, the cloud, an engine container) that the worker can't measure.
     memory_note: str | None = None
+    # Where it read: "gpu" on the graphics card (core/gpu.py), else "cpu".
+    device: Literal["cpu", "gpu"] | None = None
 
 
 class LeaderboardRow(BaseModel):
@@ -79,6 +81,7 @@ class LeaderboardRow(BaseModel):
     variant: str | None = None
     # Why `peak_memory_mb` is empty (ModelRun.memory_note).
     memory_note: str | None = None
+    device: Literal["cpu", "gpu"] | None = None
 
 
 class BenchSummary(BaseModel):

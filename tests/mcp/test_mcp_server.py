@@ -39,7 +39,10 @@ async def test_tools_are_listed_with_annotations() -> None:
     async with Client(server) as client:
         tools = {t.name: t for t in (await client.list_tools()).tools}
     assert {"get_device", "list_models", "install_model", "read_file", "start_read", "get_read",
-            "start_benchmark", "get_benchmark", "get_benchmark_page", "remove_model"} <= set(tools)
+            "start_benchmark", "get_benchmark", "get_benchmark_page", "remove_model",
+            "get_gpu", "switch_engine_build", "get_build_status"} <= set(tools)
+    assert tools["get_gpu"].annotations.read_only_hint is True
+    assert tools["switch_engine_build"].annotations.read_only_hint is False
     assert tools["remove_model"].annotations.destructive_hint is True
     assert tools["list_models"].annotations.read_only_hint is True
     assert tools["get_read"].annotations.read_only_hint is True

@@ -83,6 +83,7 @@ def main() -> int:
     tls.use_system_certificates()
     plugins.load()
 
+    from docbox.backend.core import gpu
     from docbox.backend.core.pages import iter_pages
     from docbox.service import ocr
     from docbox.service.errors import ServiceError
@@ -94,9 +95,10 @@ def main() -> int:
         # OCR (iter_pages, not iter_read_pages), even when a PDF carries its own text.
         engine = spec.engine_factory()
         started = time.perf_counter()
-        engine.load()
+        # On the device the model reads on in the app (core/gpu.py), so the timings match.
+        device = gpu.load(spec, engine)
         emit("loaded", seconds=round(time.perf_counter() - started, 3),
-             in_process=getattr(engine, "runs_in_process", True))
+             in_process=getattr(engine, "runs_in_process", True), device=device)
     except ServiceError as exc:
         emit("fatal", error=exc.detail, code=exc.code)
         return 1

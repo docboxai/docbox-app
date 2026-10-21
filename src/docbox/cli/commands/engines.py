@@ -1,4 +1,4 @@
-"""docbox engines list | remove"""
+"""docbox engines list | remove | gpu | build"""
 
 from __future__ import annotations
 
@@ -22,6 +22,21 @@ def register(sub, common) -> None:
     rm.add_argument("--yes", "-y", action="store_true", help="don't ask first")
     rm.set_defaults(func=_remove)
 
+    g = esub.add_parser(
+        "gpu", parents=[common],
+        help="the graphics card, and which engines read on it",
+    )
+    g.set_defaults(func=_gpu)
+
+    b = esub.add_parser(
+        "build", parents=[common],
+        help="install an engine's graphics-card (gpu) or processor (cpu) build",
+    )
+    b.add_argument("engine", help="paddle or easyocr")
+    b.add_argument("build", choices=["gpu", "cpu"])
+    b.add_argument("--yes", "-y", action="store_true", help="don't ask first")
+    b.set_defaults(func=_build)
+
 
 def _list(args, out: Output) -> int:
     info = service.storage()
@@ -42,6 +57,50 @@ def _list(args, out: Output) -> int:
         print(f"\nModels folder: {human_bytes(info.models_bytes)} in {info.data_dir}")
 
     out.result(info, human)
+    return 0
+
+
+def _gpu(args, out: Output) -> int:
+    status = service.gpu_status()
+
+    def human() -> None:
+        if status.name:
+            free = f", {status.memory_free_gb:g} GB free" if status.memory_free_gb else ""
+            print(f"Graphics   {status.name} ({status.memory_total_gb:g} GB{free})")
+            print(f"Driver     {status.driver_version or '?'} · CUDA {status.cuda_version or '?'}"
+                  f" (DocBox needs {status.cuda_required})")
+        print(f"Usable     {'yes' if status.usable else 'no: ' + (status.reason or '')}")
+        table(
+            ["ENGINE", "NAME", "BUILD", "GPU DOWNLOAD", "NOTE"],
+            [
+                [e.id, e.name, e.installed or "not installed",
+                 human_bytes(e.gpu_download_mb * 2**20),
+                 "switch pending a restart" if e.pending_restart else (e.blocked or "")]
+                for e in status.engines
+            ],
+        )
+
+    out.result(status, human)
+    return 0
+
+
+def _build(args, out: Output) -> int:
+    status = service.gpu_status()
+    engine = next((e for e in status.engines if e.id == args.engine), None)
+    if engine is not None and args.build == "gpu" and engine.installed != "gpu":
+        size = human_bytes(engine.gpu_download_mb * 2**20)
+        question = f"Download {engine.name} for the graphics card (about {size})?"
+    else:
+        question = f"Switch {args.engine} to its {args.build} build?"
+    if not confirm(question, yes=args.yes):
+        raise Invalid("Not changed.")
+    detail = service.switch_build(
+        args.engine, args.build,
+        lambda pct, message: out.progress(f"installing   {pct:5.1f}%  {message}"),
+    )
+    out.end_progress()
+    out.result({"engine": args.engine, "build": args.build, "detail": detail},
+               lambda: print(detail))
     return 0
 
 

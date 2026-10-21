@@ -37,6 +37,34 @@ paddle = ["paddleocr>=2.9", "paddlepaddle>=3.2,<3.3"]
 # index (sources only apply to direct dependencies); PyPI's Linux torch wheel bundles CUDA
 # and is several times larger.
 easyocr = ["easyocr>=1.7", "torch>=2.2", "torchvision>=0.17", "opencv-contrib-python"]
+# The same engines built for NVIDIA graphics cards (CUDA 12.6), installed instead of the
+# CPU ones when the user turns the graphics card on (core/runtime.py). Windows and Linux
+# on x86_64 only, where both projects publish CUDA wheels; elsewhere they're empty.
+# Paddle's CUDA wheels live on its own index, PyTorch's on its cu126 index (sources below).
+# CUDA 12.6 rather than newer: it's the one build both publish for Windows and Linux
+# (Paddle 3.2's CUDA 13 build is Linux-only), and it runs on drivers from 560 on.
+paddle-gpu = [
+    "paddleocr>=2.9 ; (sys_platform == 'win32' or sys_platform == 'linux') and (platform_machine == 'x86_64' or platform_machine == 'AMD64')",
+    "paddlepaddle-gpu>=3.2,<3.3 ; (sys_platform == 'win32' or sys_platform == 'linux') and (platform_machine == 'x86_64' or platform_machine == 'AMD64')",
+    # Paddle's Windows wheel expects NVIDIA's CUDA toolkit and cuDNN installed system-wide;
+    # these are the same libraries its Linux wheel depends on, as NVIDIA's own wheels, which
+    # engines/cuda.py puts on the DLL search path before Paddle loads.
+    "nvidia-cuda-runtime-cu12==12.6.77 ; platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "nvidia-cuda-nvrtc-cu12==12.6.77 ; platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "nvidia-cublas-cu12==12.6.4.1 ; platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "nvidia-cudnn-cu12==9.5.1.17 ; platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "nvidia-cufft-cu12==11.3.0.4 ; platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "nvidia-curand-cu12==10.3.7.77 ; platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "nvidia-cusolver-cu12==11.7.1.2 ; platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "nvidia-cusparse-cu12==12.5.4.2 ; platform_machine == 'AMD64' and sys_platform == 'win32'",
+    "nvidia-nvjitlink-cu12==12.6.85 ; platform_machine == 'AMD64' and sys_platform == 'win32'",
+]
+easyocr-gpu = [
+    "easyocr>=1.7 ; (sys_platform == 'win32' or sys_platform == 'linux') and (platform_machine == 'x86_64' or platform_machine == 'AMD64')",
+    "torch>=2.2 ; (sys_platform == 'win32' or sys_platform == 'linux') and (platform_machine == 'x86_64' or platform_machine == 'AMD64')",
+    "torchvision>=0.17 ; (sys_platform == 'win32' or sys_platform == 'linux') and (platform_machine == 'x86_64' or platform_machine == 'AMD64')",
+    "opencv-contrib-python ; (sys_platform == 'win32' or sys_platform == 'linux') and (platform_machine == 'x86_64' or platform_machine == 'AMD64')",
+]
 # The MCP server for AI agents (`docbox mcp`): `uv tool install "docbox[agents] @ git+..."`.
 # Not an engine, and not in the desktop app's runtime, which never runs it.
 agents = ["mcp>=2.3"]
@@ -58,15 +86,41 @@ default-groups = ["dev"]
 # uninstalling it deleted them, breaking the engine left behind. Every engine shares the
 # contrib build instead (a superset; listed in the easyocr extra for EasyOCR-only installs).
 override-dependencies = ["opencv-python-headless; sys_platform == 'never'"]
+# An engine's CPU and graphics-card builds install the same modules (`paddle`, `torch`), so
+# only one of each pair can be in an environment; uv locks them as alternatives. The two
+# graphics-card builds can't share one either: on Linux Paddle's pins NCCL 2.25.1 exactly
+# and every torch CUDA 12.6 build another version, so one engine at a time uses the card.
+conflicts = [
+    [{ extra = "paddle" }, { extra = "paddle-gpu" }],
+    [{ extra = "easyocr" }, { extra = "easyocr-gpu" }],
+    [{ extra = "paddle-gpu" }, { extra = "easyocr-gpu" }],
+]
 
 [[tool.uv.index]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[[tool.uv.index]]
+name = "paddle-cu126"
+url = "https://www.paddlepaddle.org.cn/packages/stable/cu126/"
+explicit = true
+
 [tool.uv.sources]
-torch = { index = "pytorch-cpu" }
-torchvision = { index = "pytorch-cpu" }
+torch = [
+    { index = "pytorch-cpu", extra = "easyocr" },
+    { index = "pytorch-cu126", extra = "easyocr-gpu" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "easyocr" },
+    { index = "pytorch-cu126", extra = "easyocr-gpu" },
+]
+paddlepaddle-gpu = { index = "paddle-cu126" }
 
 [build-system]
 requires = ["setuptools>=70", "wheel"]
