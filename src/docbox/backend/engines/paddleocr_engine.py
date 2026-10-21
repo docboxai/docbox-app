@@ -98,6 +98,19 @@ def _owned(strip: tuple[int, int, int, int], strips: list, box: list[float]) -> 
     return (first or centre >= lo + _OVERLAP / 2) and (last or centre < hi - _OVERLAP / 2)
 
 
+def _same_line(a: OcrLine, b: OcrLine) -> bool:
+    """Whether two strips read the same line: a line centred on the cut between them can
+    come back a pixel apart from each, so both would own it."""
+    if a.text != b.text or a.box is None or b.box is None:
+        return False
+    w = min(a.box[2], b.box[2]) - max(a.box[0], b.box[0])
+    h = min(a.box[3], b.box[3]) - max(a.box[1], b.box[1])
+    if w <= 0 or h <= 0:
+        return False
+    area = (a.box[2] - a.box[0]) * (a.box[3] - a.box[1])
+    return w * h >= 0.5 * area
+
+
 class PaddleOcrEngine:
     """A PaddleOCR (PP-OCR) detection + recognition pipeline for a specific det/rec
     model pair. CPU-only for v1; `device` is a forward-compat slot for a future
@@ -177,15 +190,21 @@ class PaddleOcrEngine:
 
         strips = _strips(*image.size)
         lines: list[OcrLine] = []
+        previous: list[OcrLine] = []  # what the strip before this one kept
         for strip in strips:
             dx, dy = strip[0], strip[1]
+            kept: list[OcrLine] = []
             for line in self._run_one(image if len(strips) == 1 else image.crop(strip)):
                 if line.box is not None and len(strips) > 1:
                     line.box = [line.box[0] + dx, line.box[1] + dy,
                                 line.box[2] + dx, line.box[3] + dy]
                     if not _owned(strip, strips, line.box):
                         continue
-                lines.append(line)
+                    if any(_same_line(line, other) for other in previous):
+                        continue
+                kept.append(line)
+            lines.extend(kept)
+            previous = kept
 
         return OcrResult(
             model_id=self._model_id,

@@ -22,9 +22,10 @@ Figures, and where they come from:
   computer runs out. Nobody publishes it, so the PP-OCR figures are measured
   (`ram_measured=True`): the cgroup's peak memory reading a 1920x2000 page (the largest
   strip PaddleOcrEngine reads at once) with paddlepaddle 3.2.2 and oneDNN, on an Intel
-  i5-12400F (6 cores), along with `cpu_page_seconds`. Large peaked higher on a tall
-  screenshot read in 8 strips (3.2 GB against 2.7 GB for one page: paddle keeps some of
-  each strip's memory), so its figure is that one. Mobile Chinese and the language
+  i5-12400F (6 cores), along with `cpu_page_seconds`. Every model peaked higher on a
+  tall 1920x13768 screenshot read in 8 strips (paddle keeps some of each strip's memory):
+  Mobile 1.35 GB against 1.0, Balanced up to 3.06 against 1.8, Large 3.19 against 2.7, so the
+  figures are those. Mobile Chinese and the language
   families share a measured model's text finder, which takes nearly all of the memory, and
   are counted as it measured (their readers are 8-14 MB).
   The rest (PaddleOCR-VL, EasyOCR, Tesseract) are still estimates.
@@ -77,7 +78,7 @@ registry.register(
         ),
         languages=["en"],
         approx_download_mb=12,
-        approx_ram_mb=1000,
+        approx_ram_mb=1400,
         min_disk_mb=200,
         cpu_page_seconds=1.3,
         ram_measured=True,
@@ -106,7 +107,7 @@ registry.register(
         ),
         languages=["ch", "en"],
         approx_download_mb=15,
-        approx_ram_mb=1000,
+        approx_ram_mb=1400,
         min_disk_mb=200,
         ram_measured=True,
         figures_source=_PADDLE_FIGURES,
@@ -136,7 +137,7 @@ registry.register(
         ),
         languages=["ch", "en"],
         approx_download_mb=133,
-        approx_ram_mb=1800,
+        approx_ram_mb=3100,
         min_disk_mb=300,
         cpu_page_seconds=4.7,
         preferred_device="gpu",
