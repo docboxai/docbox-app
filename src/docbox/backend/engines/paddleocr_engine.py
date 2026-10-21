@@ -84,9 +84,11 @@ def _model_dir(model_name: str) -> Path:
 
 # Paddle's own limit: it shrinks images whose long side is over this before detection.
 _MAX_SIDE = 4000
-# The most pixels the detector gets at once: a little over an A4 page at 200 dpi
-# (1654x2339), so ordinary pages are read whole and memory stays at a page's worth.
-_STRIP_PIXELS = 4_500_000
+# The most pixels the detector gets at once: just over an A4 page at 200 dpi (1654x2339),
+# so ordinary pages are read whole and memory stays at a page's worth. The catalog's
+# measured `approx_ram_mb` figures are for this much (a 1920x2000 page); raise it and they
+# no longer hold.
+_STRIP_PIXELS = 3_900_000
 # Strips overlap by more than a tall line of text, so every line lies whole in one of them.
 _OVERLAP = 200
 
@@ -114,6 +116,19 @@ def _owned(strip: tuple[int, int, int, int], strips: list, box: list[float]) -> 
     centre = (box[1] + box[3]) / 2 if vertical else (box[0] + box[2]) / 2
     first, last = strip is strips[0], strip is strips[-1]
     return (first or centre >= lo + _OVERLAP / 2) and (last or centre < hi - _OVERLAP / 2)
+
+
+def _same_line(a: OcrLine, b: OcrLine) -> bool:
+    """Whether two strips read the same line: a line centred on the cut between them can
+    come back a pixel apart from each, so both would own it."""
+    if a.text != b.text or a.box is None or b.box is None:
+        return False
+    w = min(a.box[2], b.box[2]) - max(a.box[0], b.box[0])
+    h = min(a.box[3], b.box[3]) - max(a.box[1], b.box[1])
+    if w <= 0 or h <= 0:
+        return False
+    area = (a.box[2] - a.box[0]) * (a.box[3] - a.box[1])
+    return w * h >= 0.5 * area
 
 
 class PaddleOcrEngine:
@@ -228,15 +243,21 @@ class PaddleOcrEngine:
     def _run_strips(self, image: Image.Image) -> OcrResult:
         strips = _strips(*image.size)
         lines: list[OcrLine] = []
+        previous: list[OcrLine] = []  # what the strip before this one kept
         for strip in strips:
             dx, dy = strip[0], strip[1]
+            kept: list[OcrLine] = []
             for line in self._run_one(image if len(strips) == 1 else image.crop(strip)):
                 if line.box is not None and len(strips) > 1:
                     line.box = [line.box[0] + dx, line.box[1] + dy,
                                 line.box[2] + dx, line.box[3] + dy]
                     if not _owned(strip, strips, line.box):
                         continue
-                lines.append(line)
+                    if any(_same_line(line, other) for other in previous):
+                        continue
+                kept.append(line)
+            lines.extend(kept)
+            previous = kept
 
         return OcrResult(
             model_id=self._model_id,

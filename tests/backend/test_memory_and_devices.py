@@ -101,6 +101,27 @@ def test_strips_read_every_line_once_in_place(monkeypatch) -> None:
     assert [line.box[1] for line in result.lines] == expected
 
 
+def test_a_line_on_the_cut_is_kept_once(monkeypatch) -> None:
+    """Strips meet at y=900 here. Each reports a line centred on the cut a pixel apart, so
+    by its centre each strip owns its own copy."""
+    monkeypatch.setattr(paddleocr_engine, "_STRIP_PIXELS", 40 * 1000)
+    engine = PaddleOcrEngine(model_id="m", det_model_name="d", rec_model_name="r")
+    engine._ocr = object()
+
+    def run_one(image: Image.Image) -> list[OcrLine]:
+        red, green, _ = image.getpixel((0, 0))
+        top = green * 256 + red
+        if top == 0:
+            return [OcrLine(text="on the cut", box=[10, 885, 200, 914])]
+        if top == 800:
+            return [OcrLine(text="on the cut", box=[10, 86, 200, 115])]
+        return []
+
+    monkeypatch.setattr(engine, "_run_one", run_one)
+    result = engine.run(_striped_image(40, 2500))
+    assert [line.text for line in result.lines] == ["on the cut"]
+
+
 # --- the RAM limit -----------------------------------------------------------------------
 
 
