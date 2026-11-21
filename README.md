@@ -184,10 +184,10 @@ decide which models will run comfortably.
 
 DocBox checks for a new version each time it starts. When there is one, a bar at the top
 offers **Install & restart**: DocBox downloads the update, checks its signature, installs it
-and reopens. On Linux, a `.deb` or `.rpm` install asks for your password first, like any
-system package. Your engines, models and settings are kept. If the update can't be
-installed from inside the app, the bar offers **Download** instead, which opens the
-Releases page: install the new version over the old one.
+and reopens (the Windows installer, the macOS app and the Linux AppImage). Your engines,
+models and settings are kept. Where the update can't be installed from inside the app (a
+`.deb` belongs to your package manager, and so does the MSI), the bar offers **Download**
+instead, which opens the Releases page: install the new version over the old one.
 
 ## Which engine should I use?
 

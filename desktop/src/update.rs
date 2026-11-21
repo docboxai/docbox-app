@@ -63,13 +63,24 @@ pub fn is_newer(latest: &str, current: &str) -> bool {
     matches!((parse_version(latest), parse_version(current)), (Some(a), Some(b)) if a > b)
 }
 
-/// Whether this copy can replace itself: the Windows installer and the macOS app can, and
-/// on Linux only an AppImage (a .deb's program belongs to the package manager).
+/// Whether this copy can replace itself: the macOS app can, on Windows only an NSIS install
+/// (it has `uninstall.exe` beside the program; an MSI install belongs to Windows Installer,
+/// and `updates.json` only has the NSIS installer), and on Linux only an AppImage (a .deb's
+/// program belongs to the package manager).
 fn installs_itself() -> bool {
     if cfg!(debug_assertions) {
         return false;
     }
-    !cfg!(target_os = "linux") || std::env::var_os("APPIMAGE").is_some()
+    if cfg!(target_os = "linux") {
+        return std::env::var_os("APPIMAGE").is_some();
+    }
+    if cfg!(windows) {
+        return std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|dir| dir.join("uninstall.exe").is_file()))
+            .unwrap_or(false);
+    }
+    true
 }
 
 fn signed_update() -> Option<cargo_packager_updater::Update> {
@@ -163,20 +174,26 @@ fn install(update: Arc<cargo_packager_updater::Update>, cx: &mut App) {
         cx.update(|cx| match result {
             Ok((update, bytes)) => {
                 set(cx, |n| n.phase = Some(Phase::Installing));
-                // Stop the backend first: on Windows the installer replaces files it holds
-                // open, and the updater exits the app without the usual close handling.
-                cx.global::<Backend>().shutdown();
+                // On Windows the installer replaces files the backend may hold open, and on
+                // success the updater exits the app itself without the usual close handling,
+                // so the backend stops first there. Elsewhere it keeps running until the
+                // new version is in place.
+                if cfg!(windows) {
+                    cx.global::<Backend>().shutdown();
+                }
                 match update.install(bytes) {
-                    Ok(()) => cx.restart(),
-                    Err(err) => {
-                        // The backend is stopped: start it again so the app keeps working.
-                        cx.global::<Backend>().start();
-                        set(cx, |n| {
-                            n.error = Some(format!("Couldn't install it: {err}"));
-                            n.offer_download = true;
-                            n.phase = Some(Phase::Idle);
-                        });
+                    Ok(()) => {
+                        cx.global::<Backend>().shutdown();
+                        cx.restart();
                     }
+                    // The backend was stopped for nothing: start the app again, which starts
+                    // it again (on its own new port) and keeps the old version.
+                    Err(_) if cfg!(windows) => cx.restart(),
+                    Err(err) => set(cx, |n| {
+                        n.error = Some(format!("Couldn't install it: {err}"));
+                        n.offer_download = true;
+                        n.phase = Some(Phase::Idle);
+                    }),
                 }
             }
             Err(err) => set(cx, |n| {

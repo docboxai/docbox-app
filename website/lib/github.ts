@@ -20,7 +20,7 @@ export async function getStarCount(): Promise<number | null> {
 }
 
 /** Direct links to the installer for each system, where one file fits everyone on it.
- * Linux has none: an AppImage, a .deb and an .rpm, and a browser can't tell which suits. */
+ * Linux has none: an AppImage and a .deb, and a browser can't tell which suits. */
 export interface Installers {
   windows?: string;
   macos?: string;

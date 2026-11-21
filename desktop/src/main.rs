@@ -52,6 +52,11 @@ fn main() {
     gpui_kit::application().with_assets(gpui_kit::assets::AllAssets).run(move |cx| {
         gpui_kit::init(cx);
         cx.set_global(backend.clone());
+        // An AppImage runs from a mount that goes away when it exits: restarting (after an
+        // update, or to apply an engine switch) must start the AppImage file itself.
+        if let Some(appimage) = std::env::var_os("APPIMAGE") {
+            cx.set_restart_path(appimage.into());
+        }
         update::check(cx);
 
         let options = WindowOptions {

@@ -68,18 +68,21 @@ jobs:
           - os: windows-latest
             uv_asset: uv-x86_64-pc-windows-msvc.zip
             sidecar: uv-x86_64-pc-windows-msvc.exe
+            formats: nsis,wix
           - os: ubuntu-22.04
             # The glibc build (glibc 2.17+), not the static musl one: the AppImage step
             # adds a library path to every program in usr/bin, and the static musl uv
             # crashes on start after that. The AppImage needs glibc anyway.
             uv_asset: uv-x86_64-unknown-linux-gnu.tar.gz
             sidecar: uv-x86_64-unknown-linux-gnu
+            formats: deb,appimage
           # Apple Silicon only: PaddlePaddle publishes no Intel macOS wheel. Not notarized
           # (no Apple Developer ID yet); Packager.toml signs it ad hoc so macOS doesn't
           # call the download damaged.
           - os: macos-latest
             uv_asset: uv-aarch64-apple-darwin.tar.gz
             sidecar: uv-aarch64-apple-darwin
+            formats: app,dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -137,7 +140,7 @@ jobs:
         env:
           CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: cargo packager --release
+        run: cargo packager --release -f ${{ matrix.formats }}
 
       # The app sets itself up with this uv on first launch, so a package whose uv doesn't
       # run is a package that can't start.
@@ -190,8 +193,10 @@ jobs:
           name '*.app.tar.gz' "DocBox-$v-macos-arm-64.app.tar.gz"
           name '*.AppImage'   "DocBox-$v-linux-x86-64.AppImage"
           name '*.deb'        "DocBox-$v-linux-x86-64.deb"
-          # The .dmg is for first installs only; the updater uses the .app.tar.gz.
+          # The .dmg is for first installs only; the updater uses the .app.tar.gz, so the
+          # .dmg's own signature isn't released.
           mv installers/**/*.dmg "dist/DocBox-$v-macos-arm-64.dmg"
+          rm installers/**/*.dmg.sig
           left=$(find installers -type f)
           [ -z "$left" ] || { echo "::error::Built but not released: $left"; exit 1; }
           ls -l dist sigs
