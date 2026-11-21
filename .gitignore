@@ -30,3 +30,6 @@ logs/
 
 # Design sources (private, kept out of the repo)
 design/
+
+# The GPUI desktop app
+desktop/target/
