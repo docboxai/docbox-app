@@ -111,6 +111,7 @@ def _spec_for(name: str, size_mb: int, description: str | None = None) -> ModelS
         # Vision-language models are slow on a CPU; Ollama uses a graphics card itself.
         slow_on_cpu=True,
         runs_on_gpu=True,
+        preferred_device="gpu",
     )
 
 

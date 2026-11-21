@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import IntEnum
 
 from docbox.backend.engines.base import OCREngine
-from docbox.backend.schemas import DeviceCapabilities, FitResult
+from docbox.backend.schemas import Device, DeviceCapabilities, FitResult, InferenceDevice
 
 # Leave headroom for the OS and other apps rather than judging fit against 100% of
 # available RAM.
@@ -43,6 +43,7 @@ class ModelSpec:
     description: str
     languages: list[str]
     approx_download_mb: int
+    # The most memory it takes while reading a page (weights included).
     approx_ram_mb: int
     min_disk_mb: int
     engine_factory: Callable[[], OCREngine]
@@ -64,6 +65,14 @@ class ModelSpec:
     # line. `variant` names this size. None: the model stands alone.
     family: str | None = None
     variant: str | None = None
+    # True when approx_ram_mb (and cpu_page_seconds) were measured rather than estimated.
+    ram_measured: bool = False
+    cpu_page_seconds: float | None = None
+    # Where it reads best, and how many times faster its published timings are on a
+    # graphics card than on a processor (`figures_source`).
+    preferred_device: Device = "cpu"
+    gpu_speedup: float | None = None
+    figures_source: str | None = None
 
 
 class ModelRegistry:
@@ -94,12 +103,25 @@ def _slow_here(spec: ModelSpec, caps: DeviceCapabilities) -> bool:
     return spec.slow_on_cpu and not (spec.runs_on_gpu and _has_dedicated_gpu(caps))
 
 
-def check_fit(spec: ModelSpec, caps: DeviceCapabilities) -> FitResult:
+def _gb(mb: float) -> str:
+    return f"{mb / 1024:.1f}".removesuffix(".0") + " GB"
+
+
+def check_fit(
+    spec: ModelSpec, caps: DeviceCapabilities, ram_limit_gb: float | None = None
+) -> FitResult:
+    """`ram_limit_gb`: the most memory the user lets a model take (settings)."""
     reasons: list[str] = []
     summary: str | None = None
     available_mb = caps.ram_available_gb * 1024
     needed_mb = spec.approx_ram_mb + _RAM_SAFETY_MARGIN_MB
-    if available_mb < needed_mb:
+    if ram_limit_gb and spec.approx_ram_mb > ram_limit_gb * 1024:
+        reasons.append(
+            f"Takes about {_gb(spec.approx_ram_mb)} while reading, over your "
+            f"{_gb(ram_limit_gb * 1024)} limit"
+        )
+        summary = "Over your RAM limit"
+    elif available_mb < needed_mb:
         reasons.append(
             f"Needs ~{needed_mb:.0f} MB free RAM, only {available_mb:.0f} MB available"
         )
@@ -123,11 +145,13 @@ def check_fit(spec: ModelSpec, caps: DeviceCapabilities) -> FitResult:
     )
 
 
-def runs_smoothly(spec: ModelSpec, caps: DeviceCapabilities) -> bool:
+def runs_smoothly(
+    spec: ModelSpec, caps: DeviceCapabilities, ram_limit_gb: float | None = None
+) -> bool:
     """Whether this computer clears the model's tier, has the memory and disk for it
     right now, and runs it at full speed (no "slow without a GPU")."""
     ram_gb, cores = _TIER_NEEDS[spec.tier]
-    fit = check_fit(spec, caps)
+    fit = check_fit(spec, caps, ram_limit_gb)
     return (
         caps.ram_total_gb >= ram_gb
         and caps.cpu_physical_cores >= cores
@@ -136,10 +160,37 @@ def runs_smoothly(spec: ModelSpec, caps: DeviceCapabilities) -> bool:
     )
 
 
-def recommend(specs: Iterable[ModelSpec], caps: DeviceCapabilities) -> ModelSpec | None:
+def recommend(
+    specs: Iterable[ModelSpec], caps: DeviceCapabilities, ram_limit_gb: float | None = None
+) -> ModelSpec | None:
     """The best-reading model that runs smoothly here, or None if none does. Quality
     decides, not tier: a heavier model is only worth it when it also reads better. On a
     tie the first one listed wins, so the pick is stable."""
-    candidates = [s for s in specs if s.quality is not None and runs_smoothly(s, caps)]
+    candidates = [s for s in specs if s.quality is not None and runs_smoothly(s, caps, ram_limit_gb)]
     # max() keeps the first of equal items.
     return max(candidates, key=lambda s: s.quality or 0, default=None)
+
+
+def inference_device(spec: ModelSpec, caps: DeviceCapabilities) -> InferenceDevice:
+    """Where the model reads here, where it reads best, and what would make it faster.
+    DocBox's own engines run on the processor; only engines that bring their own GPU
+    support (Ollama) use a graphics card."""
+    on_gpu = spec.runs_on_gpu and _has_dedicated_gpu(caps)
+    note = None
+    if spec.preferred_device == "gpu" and not on_gpu:
+        faster = f"about {spec.gpu_speedup:g}× faster" if spec.gpu_speedup else "faster"
+        if caps.gpu_memory_gb:
+            note = (
+                f"Reads {faster} on a graphics card such as this computer's {caps.gpu_name}, "
+                "but DocBox runs it on the processor for now."
+            )
+        elif spec.runs_on_gpu:
+            note = f"Reads {faster} on a dedicated graphics card, which this computer lacks."
+        else:
+            note = f"Reads {faster} on an NVIDIA graphics card; here it runs on the processor."
+    return InferenceDevice(
+        runs_on="gpu" if on_gpu else "cpu",
+        preferred=spec.preferred_device,
+        gpu_speedup=spec.gpu_speedup,
+        note=note,
+    )

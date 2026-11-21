@@ -136,6 +136,12 @@ step for frontend changes.
   without a GPU. Quality wins over tier: a heavier model is picked only when it also
   reads better. `quality=None` (the default; language specialists, Ollama, cloud) is
   never picked, so give every new general-purpose built-in model a `tier` and `quality`.
+- Figures: `approx_ram_mb` is the peak while reading a page (`ram_measured` when measured,
+  as `models_catalog.py`'s docstring describes), sizes and CPU/GPU speedups come from the
+  model's published tables (`figures_source`, which must be on the opener allow-list).
+  `preferred_device` ("gpu" when a graphics card makes it several times faster) and
+  `inference_device()` give `ModelInfo.device`: where it reads here and what would be
+  faster. DocBox's own engines still run on the CPU; only Ollama uses a GPU.
 
 `src/docbox/backend/engines/base.py` defines the `OCREngine` Protocol every engine
 implements: `is_downloaded()`, `download(progress_cb)`, `load()`, `run(image) -> OcrResult`.
@@ -418,8 +424,10 @@ page that needs OCR. `use_pdf_text=False` (reads API form field, the Read a file
 `docbox read --ocr-all`, MCP `use_pdf_text`) OCRs every page; benchmarks always do
 (`iter_pages`).
 
-`core/config_store.py` also holds the default model, the output folder and the cloud
-switch (`/api/settings`). With the switch off, NVIDIA NIM models are hidden and refused
+`core/config_store.py` also holds the default model, the output folder, the RAM limit and
+the cloud switch (`/api/settings`). The RAM limit marks models over it as not fitting (and
+never recommended), and `reader.check_memory()` refuses to start a read (or `/api/ocr/run`)
+whose model takes more than the limit, or more than is free when it isn't loaded yet. With the switch off, NVIDIA NIM models are hidden and refused
 (`platforms.cloud_blocked`); an unset switch follows whether a key was saved.
 
 Downloads can be paused: `POST .../download/pause` sets a flag the job's progress callback
@@ -496,9 +504,13 @@ its own transitions, since it sets `translate` and `transition`. See `website/RE
 - No byte-level download progress from paddlex's downloader — progress is coarse/staged
   (detection model downloading → recognition model downloading → ready), read off
   paddlex's internal `official_models[name]` API.
-- `enable_mkldnn=False` must be passed to the pipeline constructor — without it, CPU
-  inference on this paddlepaddle 3.x build crashes with
-  `NotImplementedError: ConvertPirAttribute2RuntimeAttribute not support [...]`.
+- oneDNN (`enable_mkldnn=True`) must stay on: without it paddle's CPU convolutions take
+  about 5 GB per megapixel and tall images got the backend OOM-killed (issue #23).
+  paddlepaddle 3.3 breaks oneDNN (`ConvertPirAttribute2RuntimeAttribute not support`), hence
+  `paddlepaddle<3.3` in `pyproject.toml`; check oneDNN works before raising that pin.
+- Paddle shrinks images whose long side is over 4000 px, so `PaddleOcrEngine.run` reads
+  tall or very large images in overlapping full-resolution strips (`_strips`), each line
+  kept by the strip that owns its centre; that also bounds a page's memory.
 - Classic PP-OCR pipelines return `rec_texts`/`rec_scores` on the result object;
   PaddleOCR-VL instead exposes `.markdown["markdown_texts"]` via its `MarkdownMixin` —
   the two engine implementations parse results differently for this reason.

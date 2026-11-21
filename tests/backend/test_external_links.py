@@ -71,3 +71,11 @@ def test_prerequisite_download_pages_are_allowed() -> None:
 def test_benchmark_score_sources_are_allowed() -> None:
     urls = _urls_in(json.loads(OCRBENCH.read_text(encoding="utf-8")))
     assert urls and {_normalised(u) for u in urls} <= _allowed()
+
+
+def test_model_figure_sources_are_allowed() -> None:
+    import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
+    from docbox.backend.core.registry import registry
+
+    urls = {_normalised(s.figures_source) for s in registry.list() if s.figures_source}
+    assert urls and urls <= _allowed()

@@ -14,6 +14,8 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
+import psutil
+
 from docbox.backend import platforms
 from docbox.backend.core import config_store, engine_cache, history, prerequisites, runtime
 from docbox.backend.core.pages import PageError, count_pages, iter_read_pages
@@ -47,6 +49,39 @@ def check_runnable(model_id: str) -> ModelSpec:
         name = prerequisites.PREREQUISITES[spec.prerequisite]["name"]
         raise NotRunnable(409, f"{name} needs to be installed and running", "needs_prerequisite")
     return spec
+
+
+def _gb(mb: float) -> str:
+    return f"{mb / 1024:.1f}".removesuffix(".0") + " GB"
+
+
+def check_memory(spec: ModelSpec) -> None:
+    """Refuse to start reading with a model that takes more memory than the user's RAM
+    limit, or than is free right now (unless it's already loaded), rather than let the
+    operating system kill the app halfway through. Engines read big images in pieces
+    (PaddleOcrEngine's strips), so a page takes about the model's `approx_ram_mb`."""
+    if not getattr(spec.engine_factory(), "runs_in_process", True):
+        return  # Ollama, the cloud, an engine container: their memory isn't ours
+    needed_mb = spec.approx_ram_mb
+    limit_gb = config_store.get_ram_limit_gb()
+    if limit_gb and needed_mb > limit_gb * 1024:
+        raise NotRunnable(
+            409,
+            f"{spec.name} takes about {_gb(needed_mb)} of memory to read a page, over your "
+            f"{_gb(limit_gb * 1024)} limit. Raise the limit under Device, or choose a "
+            "smaller model.",
+            "blocked",
+        )
+    if spec.id in engine_cache.loaded_model_ids():
+        return
+    free_mb = psutil.virtual_memory().available / 2**20
+    if free_mb < needed_mb:
+        raise NotRunnable(
+            409,
+            f"{spec.name} takes about {_gb(needed_mb)} of memory to read a page, and only "
+            f"{_gb(free_mb)} is free. Close some apps, or choose a smaller model.",
+            "blocked",
+        )
 
 
 @dataclass
@@ -163,6 +198,7 @@ def _read(job: _Job) -> None:
                     # The model is loaded (or taken warm from the last read) at the first
                     # page that needs OCR: a PDF that carries all its text never loads one.
                     if engine is None:
+                        check_memory(spec)
                         engine = using.enter_context(engine_cache.loaded(spec))
                     result = engine.run(page.image)
                     read = ReadPage(lines=result.lines, text=result.text)

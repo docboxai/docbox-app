@@ -138,6 +138,19 @@ def test_settings_cloud_rejects_other_values(capsys, data_dir, value) -> None:
     assert code == 1
 
 
+
+def test_settings_ram_limit(capsys, data_dir) -> None:
+    code, body, _ = run_json(capsys, "settings", "set", "ram-limit", "4.5")
+    assert code == 0 and body["ram_limit_gb"] == 4.5
+    code, body, _ = run_json(capsys, "settings", "set", "ram-limit", "none")
+    assert body["ram_limit_gb"] is None
+
+
+@pytest.mark.parametrize("value", ["lots", "-2"])
+def test_settings_ram_limit_rejects_other_values(capsys, data_dir, value) -> None:
+    code, _, _ = run_json(capsys, "settings", "set", "ram-limit", value)
+    assert code == 1
+
 def test_engines_list(capsys, data_dir) -> None:
     code, body, _ = run_json(capsys, "engines", "list")
     assert code == 0
