@@ -7,12 +7,12 @@ def test_health(client: TestClient) -> None:
     assert resp.json() == {"status": "ok"}
 
 
-def test_cors_allows_the_app_webview_but_not_other_sites(client) -> None:
+def test_cors_allows_no_website_by_default(client) -> None:
+    # The desktop app sends no Origin; no web page may read the backend's answers.
     def allowed(origin: str) -> str | None:
         resp = client.get("/api/health", headers={"Origin": origin})
         return resp.headers.get("access-control-allow-origin")
 
-    assert allowed("tauri://localhost") == "tauri://localhost"
-    assert allowed("http://tauri.localhost") == "http://tauri.localhost"
-    assert allowed("http://localhost:1420") == "http://localhost:1420"
     assert allowed("https://evil.example") is None
+    assert allowed("http://localhost:1420") is None
+    assert allowed("tauri://localhost") is None

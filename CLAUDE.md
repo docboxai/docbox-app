@@ -10,14 +10,14 @@ device RAM/CPU/disk against each model's requirements before recommending it.
 
 Three-part architecture, distributed as installers via GitHub Releases:
 
-- **Frontend**: Tauri (Rust) native shell (`src-tauri/`) hosting a React + TypeScript +
-  Tailwind CSS UI (`frontend/`).
+- **Desktop app**: a native Rust window drawn by GPUI with gpui-kit's components
+  (`desktop/`). No webview: the views are Rust (`desktop/src/views/`).
 - **Backend**: a local FastAPI + uvicorn server (`src/docbox/backend/`), spawned by the
-  Tauri shell as a child process (a venv's `python -m docbox.backend.main`) and stopped
-  with its whole process tree on exit; it also exits by itself if the shell dies first
-  (see "Child processes never outlive the app"). The webview talks to it over
-  `http://127.0.0.1:<port>`; the frontend polls the `backend_status` Tauri command until
-  it's up, then gets the URL from `backend_base_url` (`src-tauri/src/main.rs`).
+  desktop app as a child process (a venv's `python -m docbox.backend.main`) and stopped
+  with its whole process tree on exit; it also exits by itself if the app dies first
+  (see "Child processes never outlive the app"). The app talks to it over
+  `http://127.0.0.1:<port>` (`desktop/src/api.rs`); the window shows the setup screen
+  until `desktop/src/backend.rs` reports it ready.
 - **Models**: registered against a `ModelSpec`/`OCREngine` abstraction
   (`src/docbox/backend/core/registry.py`, `src/docbox/backend/engines/`), stored under
   the data dir from `core/paths.py` (`DOCBOX_DATA_DIR`, else platformdirs' user *data*
@@ -33,35 +33,39 @@ See "Packaging and the managed runtime" below for how installed builds get Pytho
 uv python pin 3.12      # already pinned via .python-version
 uv sync --extra paddle  # base deps + PaddleOCR; add --extra easyocr for EasyOCR/PyTorch
 # (not --all-extras: the -gpu extras conflict with the CPU ones, see "graphics card" below)
-npm --prefix frontend install
-cargo install tauri-cli --version "^2" --locked   # once, for `cargo tauri`
 ```
+
+On Linux, GPUI needs the Vulkan, Wayland, xkbcommon and fontconfig development packages
+(the `desktop` job in `.github/workflows/ci.yml` lists them for Ubuntu).
 
 ### Run the full app
 
 ```sh
-cargo tauri dev   # from the repository root
+cargo run --manifest-path desktop/Cargo.toml
 ```
 
-Run the Tauri CLI from the repository root. With no `package.json` there, it searches
-below for one and takes `frontend/` as the frontend directory, which is where
-`beforeDevCommand`/`beforeBuildCommand` in `src-tauri/tauri.conf.json` run (so they're
-plain `npm run dev`/`npm run build`). Run from `src-tauri/`, it finds no `package.json` and
-falls back to the repository root, where those hooks fail. The release workflow runs
-`cargo tauri build` from the root too. Dev builds run the repo's `.venv/…/python`, so `uv sync`
-must have been run first. A plain `uv sync` is exact: it uninstalls extras you didn't
-pass, so always pass the extras you need. Quit an installed DocBox first: it has the same
-identifier, so the single-instance check hands the dev build's launch to it.
+Debug builds run the repo's `.venv/…/python`, so `uv sync` must have been run first. A plain
+`uv sync` is exact: it uninstalls extras you didn't pass, so always pass the extras you
+need. Quit an installed DocBox first: it uses the same data folder, so the single-instance
+check hands the dev build's launch to it. The first build compiles GPUI (about 25 minutes
+at `-j 2` on a small machine).
+
+For a test run, give it a throwaway data folder **and settings folder**: settings live in
+the user's config dir (`core/config_store.py`, platformdirs), not `DOCBOX_DATA_DIR`:
+`DOCBOX_DATA_DIR=/tmp/d XDG_CONFIG_HOME=/tmp/d/config cargo run --manifest-path desktop/Cargo.toml`
+(Linux; `HOME` on macOS; Windows has no override). The default output folder is still
+`Documents/DocBox` unless that settings file says otherwise.
 
 ### Build an installer locally
 
 ```sh
-cargo tauri build   # from the root
+scripts/desktop_uv_sidecar.sh          # copies your uv to desktop/binaries/uv-<target-triple>
+cargo install cargo-packager --locked  # once
+cd desktop && cargo packager --release # installers in desktop/target/release/packages
 ```
 
-`build.rs` copies `uv` from PATH into `src-tauri/binaries/uv-<target-triple>` when the
-sidecar is missing (gitignored); release CI downloads a pinned, checksum-verified uv
-there instead.
+`desktop/Packager.toml` lists the formats, the bundled `backend/` resources and the bundled
+`uv`; release CI downloads a pinned, checksum-verified uv instead of copying yours.
 
 ### Backend only
 
@@ -70,20 +74,7 @@ uv run python -m docbox.backend.main --port 8756
 ```
 
 Swagger UI at `http://127.0.0.1:8756/docs`. Useful for iterating on routes without
-rebuilding the Rust shell or frontend.
-
-### Frontend only
-
-```sh
-npm --prefix frontend run dev     # http://localhost:1420
-npm --prefix frontend run build   # production build, also a good typecheck+bundle smoke test
-npx tsc --noEmit                  # (run from frontend/) typecheck only
-```
-
-Outside the Tauri webview there's no `backend_base_url` command, so `frontend/src/lib/api.ts`
-calls `/api` on the page's own origin and Vite's dev/preview server proxies it to
-`http://127.0.0.1:8756` (override with `DOCBOX_BACKEND_URL`) — start the backend standalone
-alongside it. Same-origin, so the backend's CORS allowlist doesn't apply there.
+rebuilding the desktop app.
 
 ### CLI (`docbox`)
 
@@ -116,8 +107,12 @@ app's, or platformdirs'). Tests that need a model you downloaded by hand are mar
 `DOCBOX_TEST_REAL_DATA=1 uv run pytest` (e.g.
 `tests/backend/test_models_routes.py::test_download_already_downloaded_model_reaches_done`).
 
-There is no frontend test suite; `npm run build` / `tsc --noEmit` is the verification
-step for frontend changes.
+The desktop app's tests: `cargo test --manifest-path desktop/Cargo.toml`. Besides unit
+tests, `desktop/src/contract_test.rs` starts the real backend from `.venv` with the suite's
+fake models (`tests/bench_fakes.py`), deserializes every route the app uses, and reads a
+file and runs a benchmark over HTTP; it skips without a `.venv` and doesn't run on Windows
+(it couldn't keep the backend off the real settings there). Change a schema in
+`schemas.py` and this is the test that tells you `api.rs` needs the same change.
 
 ## Architecture
 
@@ -191,8 +186,10 @@ model as `gh`'s or `aws`'s local config, not a system keychain); `is_downloaded(
 ### Packaging and the managed runtime
 
 Installed builds bundle the backend source + `pyproject.toml` + `uv.lock` +
-`.python-version` as Tauri resources (`backend/`) and `uv` as a sidecar
-(`bundle.externalBin`). On launch `main.rs::ensure_runtime` runs
+`.python-version` as resources (`backend/`, `desktop/Packager.toml`) and `uv` next to
+the program (`external-binaries`). `desktop/src/backend.rs::resource_dir` finds `backend/`
+where each installer puts it: beside the program on Windows, `Contents/Resources` on macOS,
+`lib/<program>` beside `bin/` on Linux. On launch `backend.rs::ensure_runtime` runs
 `uv sync --frozen --no-dev --no-install-project` into
 `<app_local_data_dir>/runtime/.venv` (managed CPython via `UV_PYTHON_PREFERENCE=only-managed`),
 skipped when the venv exists and `runtime/uv.lock.installed` matches the bundled lock.
@@ -201,13 +198,13 @@ installed: its dir is read-only under Program Files), `DOCBOX_RUNTIME_MODE=manag
 `DOCBOX_UV`, `DOCBOX_DATA_DIR`, `PYTHONPYCACHEPREFIX=<data>/runtime/pycache` (bytecode
 written next to the bundled source would outlive the uninstaller), and the same `UV_*`
 env vars. Logs go to
-`<data>/logs/{setup,backend}.log`. When uv or the backend ends before it's ready, the shell
+`<data>/logs/{setup,backend}.log`. When uv or the backend ends before it's ready, the app
 adds how it ended (exit status, or the signal of a crash, which prints nothing itself) to
 that log and to the error screen.
 
 HTTPS trusts the operating system's certificates, so downloads work behind company proxies
 that inspect HTTPS with their own CA: every uv the app runs gets `UV_SYSTEM_CERTS=1`
-(`main.rs::uv_env`), and each Python entry point (`create_app()`, the CLI's `main()`, the
+(`backend.rs::uv_env`), and each Python entry point (`create_app()`, the CLI's `main()`, the
 benchmark worker) calls `core/tls.py::use_system_certificates()`, which injects
 `truststore` into `ssl`, urllib3 and requests.
 
@@ -255,53 +252,56 @@ memory on any page. Changing the device settings evicts loaded engines. Never ru
 model on the GPU in tests: they fake engines, nvidia-smi and uv (`tests/backend/test_gpu.py`).
 
 Releases: `.github/workflows/release.yml` on `v*` tags. Its `check` job refuses a tag on a
-commit that isn't on `main` or a version that doesn't match `tauri.conf.json`, `Cargo.toml`
-and `pyproject.toml`. Each platform's `build` job uploads its installers; the `release` job
-names them `DocBox-<version>-<os>-<arch>.<ext>` and creates a draft release, failing if an
-installer is missing or unexpected. Its third-party actions are pinned to commits and the
-Tauri CLI to an exact version. Linux bundles uv's glibc build: the AppImage step adds a
-library path (`RUNPATH`) to every program in `usr/bin`, which makes the static musl build
-crash on start. The Linux `build` job runs the uv inside the AppImage, `.deb` and `.rpm`
-(`scripts/check_bundled_uv.sh`) before uploading them. Builds are signed for the in-app
-updater (`TAURI_SIGNING_PRIVATE_KEY*` secrets; `bundle.createUpdaterArtifacts`), and the release job
-writes `latest.json` with an entry per `<os>-<arch>[-<installer>]` (nsis, msi, app, appimage,
-deb, rpm) pointing at the renamed files. Installed copies back to 0.1.0 read
-`releases/latest/download/latest.json` and only accept that key (`plugins.updater.pubkey`).
-`UpdateBanner` installs a signed update in-app (`prepare_restart` stops the backend first;
-`.deb`/`.rpm` go through pkexec), and falls back to comparing the version with GitHub's
-latest release and opening the releases page when there's no usable `latest.json` or the
-install fails. External web pages go through `lib/external.ts` (`openExternal`,
-`openInBrowser`): `target="_blank"` alone doesn't open the browser on macOS or Linux. The
-opener capability lists every URL allowed, compared as exact strings, so they're written the
-way a browser normalises them (`https://build.nvidia.com/`, trailing slash) and the app's
-own links are constants in `lib/external.ts`; `tests/backend/test_external_links.py` checks
-the allow-list against those, the prerequisite download pages and `ocrbench.json`.
+commit that isn't on `main` or a version that doesn't match `desktop/Packager.toml`,
+`desktop/Cargo.toml` and `pyproject.toml`. Each platform's `build` job runs
+`cargo packager --release` (cargo-packager pinned to an exact version) and uploads its
+installers: NSIS and MSI, the macOS .dmg and .app.tar.gz, AppImage and .deb (no .rpm). The
+`release` job names them `DocBox-<version>-<os>-<arch>.<ext>` and creates a draft release,
+failing if an installer is missing or unexpected. Its third-party actions are pinned to
+commits. Linux bundles uv's glibc build: the AppImage step adds a library path (`RUNPATH`)
+to every program in `usr/bin`, which makes the static musl build crash on start. The Linux
+`build` job runs the uv inside the AppImage and the .deb (`scripts/check_bundled_uv.sh`)
+before uploading them.
 
-Uninstalling leaves the choice to the user. On Windows, Tauri's NSIS uninstaller asks
-whether to delete the data too (a box, unticked by default; silent uninstalls and updates
-never delete it), and `src-tauri/windows/hooks.nsh` adds what Tauri doesn't know about:
-leftover bytecode in `<install>\backend` always, and the CLI's fallback data folder
-(`%LOCALAPPDATA%\docbox\DocBox`) only when the box is ticked. `src-tauri/windows/English.nsh`
-is Tauri's own English strings with a clearer label for that box: copy it again from
-`crates/tauri-bundler/src/bundle/windows/nsis/languages/` whenever `TAURI_CLI_VERSION`
-changes. The MSI and the macOS and Linux packages never delete data; the wiki's
-Troubleshooting page says where it is. Results in `Documents/DocBox` are never deleted.
+Builds are signed for the in-app updater with the minisign key in the
+`TAURI_SIGNING_PRIVATE_KEY*` secrets (named for the shell that came first; cargo-packager
+reads the same key format), and the release job writes two manifests pointing at the
+renamed files: `updates.json` for this app's updater (`desktop/src/update.rs`,
+cargo-packager-updater: `<os>-<arch>` with a `format`) and `latest.json` for copies from
+before it (0.1.x, Tauri's updater: `<os>-<arch>[-<installer>]`). Every installed copy back
+to 0.1.0 only accepts that key (`update.rs::PUBKEY`). `update.rs` installs a signed update
+in-app where a copy can replace itself (the Windows installer, the macOS app, an AppImage;
+it stops the backend first), and otherwise, or when there's no usable manifest or the
+install fails, compares the version with GitHub's latest release and links to the releases
+page. A .deb never updates itself: its program belongs to the package manager.
+
+External web pages open only through `desktop/src/links.rs::open`, which refuses anything
+but an `https` address; the app's own links are constants there, and
+`tests/backend/test_external_links.py` checks those and every address the backend hands it
+(prerequisite download pages, `ocrbench.json`, models' `figures_source`).
+
+Uninstalling leaves the choice to the user. On Windows, the NSIS uninstaller asks whether to
+delete the data too (a box, unticked by default; silent uninstalls and updates never delete
+it): `nsis.appdata-paths` in `desktop/Packager.toml` names the app's data folder and the
+CLI's fallback one (`%LOCALAPPDATA%\docbox\DocBox`). The MSI and the macOS and Linux
+packages never delete data; the wiki's Troubleshooting page says where it is. Results in
+`Documents/DocBox` are never deleted.
 
 Child processes (the bootstrap `uv`, the backend) go through `outside_appimage` in
-`main.rs`: the AppImage launcher's PYTHONHOME/PYTHONPATH/LD_LIBRARY_PATH point into its
+`backend.rs`: the AppImage launcher's PYTHONHOME/PYTHONPATH/LD_LIBRARY_PATH point into its
 mount and would break the managed Python.
 
 ### Child processes never outlive the app
 
-- **Port:** the shell starts the backend with `--port 0`: the backend binds a free port
+- **Port:** the app starts the backend with `--port 0`: the backend binds a free port
   itself, prints `{"docbox_backend": {"port": N}}` as its first stdout line and then points
-  fd 1 at stderr (`backend.log`). `main.rs::port_report` waits for that line (anything else
+  fd 1 at stderr (`backend.log`). `backend.rs::port_report` waits for that line (anything else
   on stdout goes to the log), then polls `/api/health`; if either doesn't come, boot fails
   with the end of `backend.log`. Run by hand, the backend still defaults to port 8756, which
-  the Vite dev proxy and Docker use.
-- **Lifeline:** the shell starts the backend with `--exit-on-stdin-close` and a piped stdin
-  it never writes to (`Backend::lifeline`). When that pipe closes (the shell drops it on
-  exit, or the OS closes it because the shell crashed or was force-quit), the backend stops
+  Docker uses.
+- **Lifeline:** the app starts the backend with `--exit-on-stdin-close` and a piped stdin
+  it never writes to (`backend.rs`, `Processes::lifeline`). When that pipe closes (the app
+  drops it on exit, or the OS closes it because the app crashed or was force-quit), the backend stops
   its own children (`stop_children`: engine installs, benchmark workers), asks uvicorn to
   shut down, and hard-exits after a few seconds if that hangs. A backend run by hand or in
   Docker has no flag and ignores stdin.
@@ -314,13 +314,13 @@ mount and would break the managed Python.
   `python.exe` launcher.
 - **Benchmark workers:** they get the same kind of lifeline from whoever runs the benchmark
   (the app's backend, the CLI, the MCP server). See Benchmarks below.
-- **One instance:** `tauri-plugin-single-instance`, registered first, makes a second launch
-  show and focus the running window instead of starting a second shell, backend and
-  first-run `uv sync` on the same data dir. The close handler ends the process with
-  `std::process::exit`, which skips `RunEvent::Exit`, so it calls the plugin's `destroy`
-  itself. The updater's relaunch goes through `request_restart`, which does fire
-  `RunEvent::Exit`. Linux needs a D-Bus session bus for the check (without one the app runs
-  unchecked).
+- **One instance:** `desktop/src/instance.rs`, first thing in `main`: the running app holds
+  an exclusive lock on `<data>/instance.lock` (the OS drops it when the process ends, crash
+  or not) and listens on a loopback port written to `<data>/instance.port`. A second launch
+  that can't take the lock sends that port a token and exits; the first brings its window
+  to the front. So there's never a second backend or first-run `uv sync` on the same data.
+  Closing the window (the title bar's button on Linux, the system one elsewhere) and
+  quitting both go through `Backend::shutdown`.
 
 ### The service layer: one implementation behind the app, the CLI and MCP
 
@@ -333,8 +333,9 @@ an external program, 4 blocked) and `{"error": {"code", "detail"}}` on stderr wi
 Put new behaviour in `service/`, not in a route, so every front end gets it.
 
 The CLI runs engines in-process and shares the desktop app's data dir: `paths.get_data_dir()`
-is `DOCBOX_DATA_DIR`, else the app's folder (`io.github.docboxai.docbox`, Tauri's
-`app_local_data_dir`) when it exists, else platformdirs'. Because several processes can now
+is `DOCBOX_DATA_DIR`, else the app's folder (`io.github.docboxai.docbox`, the per-user local
+data folder the desktop app uses, `backend.rs::data_dir`, where the earlier Tauri shell
+kept it too) when it exists, else platformdirs'. Because several processes can now
 write it, read history and settings take cross-process file locks (`core/locks.py`,
 `filelock`), and installing a model holds a per-model lock (a second process gets
 `Conflict`; removing an engine takes all of its models' locks). Each read records its
@@ -407,8 +408,8 @@ and just as robust.
 The server binds `127.0.0.1`, but a web page in the user's browser can still reach
 loopback, and the read history holds the text of the user's documents. `main.py` has three
 guards:
-- **CORS** allows only the app's own origins (Tauri's `tauri://localhost` /
-  `http://tauri.localhost` and the Vite dev server on :1420), plus `DOCBOX_CORS_ORIGINS`.
+- **CORS** allows no website by default (the desktop app is native and sends no `Origin`);
+  `DOCBOX_CORS_ORIGINS` adds origins.
 - **Host check** (`TrustedHostMiddleware`): only `127.0.0.1` / `localhost`, plus
   `DOCBOX_ALLOWED_HOSTS` (the Docker engine containers set their service names). This
   stops DNS rebinding, where another site's hostname resolves to 127.0.0.1 and CORS
@@ -416,7 +417,7 @@ guards:
 - **Cross-site writes**: a POST/PUT/PATCH/DELETE whose `Origin` isn't the backend's own
   is refused unless it carries `X-DocBox-Client` (`core/client_header.py`), which other
   sites can't add without a preflight they fail. Requests without `Origin` (curl,
-  `RemoteEngine`) and Swagger UI at `/docs` pass. `frontend/src/lib/api.ts` sends it.
+  `RemoteEngine`) and Swagger UI at `/docs` pass. `desktop/src/api.rs` sends it.
 
 Startup work (marking unfinished reads as failed) runs in the app's lifespan, so building
 an app in tests doesn't touch the real read history.
@@ -470,34 +471,42 @@ carries the running or paused job so the UI can rejoin it.
 Tests redirect the settings file to a temp dir (`tests/backend/conftest.py`); they never
 touch the developer's real NVIDIA key or settings.
 
-### Frontend
+### Desktop app (`desktop/`)
 
-`frontend/src/lib/api.ts` is the single typed HTTP client; every backend schema in
-`schemas.py` should have a matching TS interface there. `components/Shell.tsx` is the
-frame (purple hero with the top-bar pill nav, cloud switch and title),
-`components/ui.tsx` holds the shared building blocks (chips, round icon actions, pill
-buttons, switch, cards, tabs), and the palette and fonts (Host Grotesk headings, DM Sans body) are tokens in `styles.css`.
-`lib/app.tsx` holds the current view (`ViewId`; no router library), device info,
-settings and a `revision` counter views refetch on; it sits inside `BootGate`
-(setup/first-run screen until the backend is ready). Per-model download state (start,
-progress, pause/resume, remove) is one hook, `lib/useModelJob.ts`, rendered by
-`ModelActions` (a compact table cell or the full panel); external-program setup is
-`PrerequisiteCard`. In Tauri, `dragDropEnabled` is off in `tauri.conf.json` so HTML5 file
-drops reach the Read a file drop zone. When adding a
-new engine, add its icon/label/capabilities/guidance to the maps in
-`frontend/src/lib/engineMeta.ts` (shared by Setup and Models).
+A Rust program drawn by GPUI, with gpui-kit's components (one dependency, `gpui-kit`; its
+skills and docs at gpui-kit.com describe the API: don't guess it from older GPUI or web
+examples). `main.rs` claims the single instance, starts the backend and opens the window.
+`shell.rs` is the frame: the setup screen until the backend answers (`backend.rs`'s status,
+polled), then the title bar, the sidebar (views and the cloud switch) and the page header
+with its stat pill. `state.rs::AppState` holds the client, the current `View`, device info,
+settings and a `revision` counter views observe and refetch on; `state::call` runs a
+blocking `api.rs` call on the background executor and hands the result to the view.
+`jobs.rs::ModelJob` is one model's download (start, poll, pause/resume, remove), kept per
+model in `AppState` so progress survives switching views; `model_actions.rs` renders it as
+a table cell or a full panel. `ui.rs` has the shared pieces (cards, section labels, stat
+cards, chips, notices) and `format.rs` the number formats and each engine's
+label/blurb/capabilities/guidance (shared by Setup and Models: add a new engine there).
+Each view in `views/` is an entity: `setup`, `models`, `read` (drop, file picker, pasting
+an image saves it under `<data>/pasted/`), `benchmarks` with `bench_run` (one run) and
+`bench_chart` (the graph and the ranked bars), `connections`, `device`, and the shared
+`prerequisite` card. `update.rs` is the updater (see Packaging), `links.rs` the only way
+to open a web page, `instance.rs` the single instance.
 
-The Benchmarks view (`BenchmarksView.tsx`: drop zone, model picker, batch cards;
-`BenchmarkRun.tsx`: leaderboard and Compare) talks to `/api/benchmarks`
-(`api/routes_benchmarks.py`). Uploads are sent with their folder path as the multipart
+Layout: card rows translate the web layout's `flex: 1 1 <basis>` as `flex_basis` plus grow
+and shrink with `min_w_0`, never `flex_1` plus a fixed `min_w`, which can't shrink and
+overflows narrow windows (tiling window managers squeeze the window below its minimum).
+
+The Benchmarks view (`views/benchmarks.rs`: drop zone, model picker, batch cards;
+`views/bench_run.rs`: leaderboard and Compare) talks to `/api/benchmarks`
+(`api/routes_benchmarks.py`). Uploads are sent with their path relative to the picked folder as the multipart
 file name so `.gt.txt` sidecars land next to their documents in the run's `inputs/`; the
 route sanitises those paths. Runs from the CLI and MCP appear there too (same data dir). A run's leaderboard is
-`BenchmarkLeaderboard.tsx`: one row of controls (scores from this run or OCRBench v1/v2,
+`BenchRunPanel::leaderboard`: one row of controls (scores from this run or OCRBench v1/v2,
 the cost measure, every size or the best size of each model, a Models filter) scoping both
-views below it. `BenchmarkChart.tsx` is the graph (hand-built SVG, no chart library):
+views below it. `bench_chart::chart` is the graph (drawn on a GPUI canvas, no chart library):
 accuracy against cost on a log axis reversed so the cheapest is on the right ("most
 efficient" top right), one line per family through its sizes, labelled once at its best
-point. `BenchmarkBars.tsx` is the ranked bars with each row's 95% interval, and doubles as
+point. `bench_chart::bars` is the ranked bars with each row's 95% interval, and doubles as
 the graph's table view. Families come from `ModelSpec.family`/`variant` (an Ollama model's
 tags too), copied onto each leaderboard row by `platforms.describe()`, which never asks a
 platform; `accuracy_margin` is `metrics.cer_margin()`: the ratio estimator's standard error
@@ -506,13 +515,13 @@ over the pages or documents with reference text, widened with Student's t for fe
 `/api/benchmarks/reference`) against catalog download size, without ranking them, since
 sources differ. Every score there needs a source URL and a `self_reported` flag;
 `tests/benchmark/test_reference.py` checks they name catalog models. Colours
-(`lib/benchmarkSeries.ts`): at most three series hues (`--color-series-1..3`, validated
+(`bench_chart::Series`): at most three series hues (validated
 all-pairs for colour-blind readers) plus a neutral, by engine, never by rank; labels use
 text colours, not the series hue (Tesseract's orange is under 4.5:1 as text). An engine whose
 model runs in another process (Ollama, NVIDIA, `RemoteEngine`) sets `runs_in_process =
 False`; the worker reports it, and the run records no peak memory, with a `memory_note`,
-rather than the worker's own. In the desktop app the report opens on this computer
-(`POST /api/benchmarks/{id}/report/open`); only a browser gets the download link.
+rather than the worker's own. The desktop app opens the report on this computer
+(`POST /api/benchmarks/{id}/report/open`).
 
 Every engine implements `delete()`; PaddleOCR's keeps model dirs another *downloaded*
 catalog entry still uses (all PP-OCRv5 language families share `PP-OCRv5_server_det`).

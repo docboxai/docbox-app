@@ -1,37 +1,26 @@
-"""Every web page the app opens must be on the opener capability's allow-list, written the
-way the webview sends it. The opener plugin compares URLs as exact strings, so a link to
-"https://build.nvidia.com" (which a browser sends as "https://build.nvidia.com/") was
-silently refused."""
+"""Every web page the desktop app opens goes through `desktop/src/links.rs::open`, which
+opens only https pages. These check the addresses it can be handed: its own constants and
+the ones the backend lists (prerequisite download pages, benchmark score sources, models'
+published figures)."""
 
 from __future__ import annotations
 
 import json
 import re
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 from docbox.backend.core.prerequisites import PREREQUISITES
 
 ROOT = Path(__file__).resolve().parents[2]
-CAPABILITY = ROOT / "src-tauri" / "capabilities" / "default.json"
-FRONTEND = ROOT / "frontend" / "src"
+DESKTOP = ROOT / "desktop" / "src"
+LINKS = DESKTOP / "links.rs"
 OCRBENCH = ROOT / "src" / "docbox" / "benchmark" / "ocrbench.json"
 
 
-def _normalised(url: str) -> str:
-    # What `new URL(url).href` gives for a plain https link: lower-case scheme and host,
-    # and "/" for an empty path.
+def _is_web_page(url: str) -> bool:
     p = urlsplit(url)
-    return urlunsplit((p.scheme.lower(), p.netloc.lower(), p.path or "/", p.query, p.fragment))
-
-
-def _allowed() -> set[str]:
-    permissions = json.loads(CAPABILITY.read_text(encoding="utf-8"))["permissions"]
-    (opener,) = [
-        p for p in permissions
-        if isinstance(p, dict) and p.get("identifier") == "opener:allow-open-url"
-    ]
-    return {entry["url"] for entry in opener["allow"]}
+    return p.scheme == "https" and bool(p.netloc)
 
 
 def _urls_in(value) -> list[str]:
@@ -39,43 +28,38 @@ def _urls_in(value) -> list[str]:
         return [u for v in value.values() for u in _urls_in(v)]
     if isinstance(value, list):
         return [u for v in value for u in _urls_in(v)]
-    return [value] if isinstance(value, str) and value.startswith("https://") else []
+    return [value] if isinstance(value, str) and value.startswith(("http://", "https://")) else []
 
 
-def test_allowed_urls_are_written_the_way_the_webview_sends_them() -> None:
-    for url in _allowed():
-        assert url == _normalised(url), f"write {url!r} as {_normalised(url)!r}"
+def test_the_apps_own_links_are_https_constants() -> None:
+    urls = re.findall(r'pub const [A-Z_]+: &str = "([^"]+)";', LINKS.read_text("utf-8"))
+    assert urls, "the app's web pages are constants in desktop/src/links.rs"
+    assert all(_is_web_page(u) for u in urls), urls
 
 
-def test_the_apps_own_links_are_allowed() -> None:
-    urls = re.findall(r'"(https://[^"]+)"', (FRONTEND / "lib" / "external.ts").read_text("utf-8"))
-    assert urls, "the app's external URLs are constants in lib/external.ts"
-    assert {_normalised(u) for u in urls} <= _allowed()
-
-
-def test_components_link_through_the_constants() -> None:
-    # A literal href would bypass the constants (and this check), so links use them.
-    literal = [
-        f.relative_to(FRONTEND)
-        for f in FRONTEND.rglob("*.tsx")
-        if re.search(r'href="https?://', f.read_text(encoding="utf-8"))
+def test_pages_open_only_through_links_open() -> None:
+    # cx.open_url anywhere else would skip the https check.
+    direct = [
+        f.relative_to(DESKTOP)
+        for f in DESKTOP.rglob("*.rs")
+        if f != LINKS and "open_url(" in f.read_text(encoding="utf-8")
     ]
-    assert literal == []
+    assert direct == []
 
 
-def test_prerequisite_download_pages_are_allowed() -> None:
-    pages = {_normalised(p["download_url"]) for p in PREREQUISITES.values() if p.get("download_url")}
-    assert pages and pages <= _allowed()
+def test_prerequisite_download_pages_are_web_pages() -> None:
+    pages = [p["download_url"] for p in PREREQUISITES.values() if p.get("download_url")]
+    assert pages and all(_is_web_page(u) for u in pages), pages
 
 
-def test_benchmark_score_sources_are_allowed() -> None:
+def test_benchmark_score_sources_are_web_pages() -> None:
     urls = _urls_in(json.loads(OCRBENCH.read_text(encoding="utf-8")))
-    assert urls and {_normalised(u) for u in urls} <= _allowed()
+    assert urls and all(_is_web_page(u) for u in urls), urls
 
 
-def test_model_figure_sources_are_allowed() -> None:
+def test_model_figure_sources_are_web_pages() -> None:
     import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
     from docbox.backend.core.registry import registry
 
-    urls = {_normalised(s.figures_source) for s in registry.list() if s.figures_source}
-    assert urls and urls <= _allowed()
+    urls = [s.figures_source for s in registry.list() if s.figures_source]
+    assert urls and all(_is_web_page(u) for u in urls), urls

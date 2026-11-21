@@ -23,18 +23,6 @@ jobs:
       - run: uv run ruff check src/docbox tests
       - run: uv run pytest
 
-  frontend:
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci --prefix frontend
-      - run: npm --prefix frontend run build
-
   website:
     runs-on: ubuntu-22.04
     defaults:
@@ -49,9 +37,10 @@ jobs:
       - run: bun run lint
       - run: bun run build
 
-  shell:
-    # Windows too: main.rs has Windows-only code (process-tree kill, no console window)
-    # that a Linux build never compiles.
+  desktop:
+    # The GPUI desktop app (desktop/): builds on every platform and runs its tests, among
+    # them the contract test against the real backend (Linux and macOS; it needs the
+    # repository's .venv, hence the uv sync).
     strategy:
       fail-fast: false
       matrix:
@@ -62,18 +51,17 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v4
-      - name: Tauri system dependencies
+      - name: GPUI system dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev \
-            libssl-dev libayatana-appindicator3-dev librsvg2-dev
-      # build.rs copies `uv` from PATH as the sidecar when none is present.
+          sudo apt-get install -y build-essential pkg-config libfontconfig-dev libfreetype-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcb1-dev \
+            libvulkan-dev libasound2-dev libzstd-dev
       - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
-      # tauri-build checks that frontendDist exists.
-      - run: mkdir -p frontend/dist
-      - run: cargo check --manifest-path src-tauri/Cargo.toml
+          workspaces: desktop
+      - run: cargo test --locked --manifest-path desktop/Cargo.toml

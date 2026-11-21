@@ -1,5 +1,5 @@
 services:
-  # The orchestrator: reached by clients (the frontend, curl, etc.) at :8756. Its
+  # The orchestrator: reached by clients (curl, scripts, the CLI's remote engine) at :8756. Its
   # /api/models and /api/ocr/run stay engine-agnostic: it delegates PaddleOCR,
   # PaddleOCR-VL, Tesseract and EasyOCR work to the dedicated containers below over
   # HTTP (see remote_engine.py) instead of running those engines itself, so this image

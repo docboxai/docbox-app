@@ -1,0 +1,93 @@
+name: Package
+
+# Builds every installer the release would, on pull requests that change the app or what
+# goes into it, and on demand: a release is the wrong time to find out an installer doesn't
+# build. Signed with a throwaway key made for the run (not the release key), so the
+# signatures are checked to exist, not trusted. Nothing is published; the installers are
+# kept as the run's artifacts for a few days.
+on:
+  pull_request:
+    paths:
+      - "desktop/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".python-version"
+      - ".github/workflows/package.yml"
+      - ".github/workflows/release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Kept in step with release.yml.
+  UV_VERSION: "0.12.3"
+  CARGO_PACKAGER_VERSION: "0.11.8"
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            sidecar: uv-x86_64-pc-windows-msvc.exe
+            formats: nsis,wix
+          - os: ubuntu-22.04
+            sidecar: uv-x86_64-unknown-linux-gnu
+            formats: deb,appimage
+          - os: macos-latest
+            sidecar: uv-aarch64-apple-darwin
+            formats: app,dmg
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Bundle uv
+        run: |
+          mkdir -p desktop/binaries
+          cp "$(command -v uv)" "desktop/binaries/${{ matrix.sidecar }}"
+      - name: GPUI system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libfontconfig-dev libfreetype-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcb1-dev \
+            libvulkan-dev libasound2-dev libzstd-dev libfuse2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - uses: cargo-bins/cargo-binstall@7bebc2e59eb8820162b7ac8f62a92bfdb2732447 # v1.25.1
+      - run: cargo binstall cargo-packager@=${{ env.CARGO_PACKAGER_VERSION }} --no-confirm
+      - name: A throwaway signing key
+        run: |
+          cargo packager signer generate --path "$RUNNER_TEMP/key" --password test --ci
+          echo "CARGO_PACKAGER_SIGN_PRIVATE_KEY=$(cat "$RUNNER_TEMP/key")" >> "$GITHUB_ENV"
+          echo "CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD=test" >> "$GITHUB_ENV"
+      - name: Build the installers
+        working-directory: desktop
+        run: cargo packager --release -f ${{ matrix.formats }}
+      - name: Check the uv in each Linux package runs
+        if: runner.os == 'Linux'
+        run: scripts/check_bundled_uv.sh desktop/target/release/packages "$UV_VERSION"
+      - name: List what was built
+        run: ls -la desktop/target/release/packages
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installers-${{ matrix.os }}
+          path: |
+            desktop/target/release/packages/*-setup.exe
+            desktop/target/release/packages/*.msi
+            desktop/target/release/packages/*.dmg
+            desktop/target/release/packages/*.AppImage
+            desktop/target/release/packages/*.deb
+            desktop/target/release/packages/*.app.tar.gz
+            desktop/target/release/packages/*.sig
+          if-no-files-found: error
+          retention-days: 5
