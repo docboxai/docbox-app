@@ -240,8 +240,19 @@ impl BenchmarksView {
             prompt: Some("Add".into()),
         });
         cx.spawn(async move |this, cx| {
-            if let Ok(Ok(Some(paths))) = paths.await {
-                this.update(cx, |this, cx| this.add(paths, cx)).ok();
+            match paths.await {
+                Ok(Ok(Some(paths))) => {
+                    this.update(cx, |this, cx| this.add(paths, cx)).ok();
+                }
+                // Linux can't always open a file picker (no desktop portal): say so.
+                Ok(Err(err)) => {
+                    this.update(cx, |this, cx| {
+                        this.error = Some(format!("Couldn't open the file picker: {err}. Drop the folder here instead."));
+                        cx.notify();
+                    })
+                    .ok();
+                }
+                _ => {}
             }
         })
         .detach();

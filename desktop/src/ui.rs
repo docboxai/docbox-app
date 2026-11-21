@@ -10,10 +10,11 @@ use gpui_kit::*;
 pub fn card(cx: &App) -> Div {
     div()
         .v_flex()
-        .rounded_lg()
+        .rounded_xl()
         .border_1()
         .border_color(cx.theme().border)
         .bg(cx.theme().background)
+        .shadow_xs()
 }
 
 /// A small uppercase heading above a group of cards.

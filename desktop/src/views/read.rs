@@ -245,8 +245,19 @@ impl ReadView {
             prompt: Some("Read".into()),
         });
         cx.spawn(async move |this, cx| {
-            if let Ok(Ok(Some(paths))) = paths.await {
-                this.update(cx, |this, cx| this.add_files(paths, cx)).ok();
+            match paths.await {
+                Ok(Ok(Some(paths))) => {
+                    this.update(cx, |this, cx| this.add_files(paths, cx)).ok();
+                }
+                // Linux can't always open a file picker (no desktop portal): say so.
+                Ok(Err(err)) => {
+                    this.update(cx, |this, cx| {
+                        this.hint = Some(format!("Couldn't open the file picker: {err}. Drop files here instead."));
+                        cx.notify();
+                    })
+                    .ok();
+                }
+                _ => {}
             }
         })
         .detach();

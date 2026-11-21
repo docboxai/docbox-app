@@ -18,6 +18,7 @@ mod update;
 mod views;
 
 use futures::StreamExt;
+use gpui_kit::component::TitleBar;
 use gpui_kit::*;
 
 use crate::backend::Backend;
@@ -56,9 +57,12 @@ fn main() {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::centered(size(px(1280.), px(820.)), cx)),
             window_min_size: Some(size(px(900.), px(600.))),
-            titlebar: Some(TitlebarOptions { title: Some("DocBox".into()), ..Default::default() }),
             app_id: Some(backend::APP_IDENTIFIER.into()),
-            ..Default::default()
+            // The window draws its own title bar (gpui-kit's TitleBar), and on Linux its
+            // own frame too: GNOME's Wayland gives windows none.
+            window_decorations: cfg!(target_os = "linux").then_some(WindowDecorations::Client),
+            titlebar: Some(TitlebarOptions { title: Some("DocBox".into()), ..TitleBar::title_bar_options() }),
+            ..TitleBar::window_options()
         };
         let window_backend = backend.clone();
         let (window, _) = gpui_kit::open_window(options, cx, |window, cx| {

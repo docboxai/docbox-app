@@ -1,6 +1,7 @@
 //! The window: the setup screen until the backend is up, then the sidebar, the page header
 //! and the current view.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::assets::IconName;
@@ -8,7 +9,7 @@ use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::sidebar::{Sidebar, SidebarMenu, SidebarMenuItem};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::switch::Switch;
-use gpui_kit::component::{ActiveTheme, Disableable, Icon, Sizable, StyledExt};
+use gpui_kit::component::{ActiveTheme, Disableable, Icon, Sizable, StyledExt, TitleBar, window_border};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -327,24 +328,47 @@ impl DocBox {
     }
 }
 
-pub fn logo(cx: &App) -> Div {
+/// DocBox's app icon, the same mark as the installers'.
+fn icon_image() -> Arc<Image> {
+    static ICON: std::sync::OnceLock<Arc<Image>> = std::sync::OnceLock::new();
+    ICON.get_or_init(|| Arc::new(Image::from_bytes(ImageFormat::Png, include_bytes!("../assets/icon-128.png").to_vec())))
+        .clone()
+}
+
+pub fn logo(_: &App) -> Div {
     div()
         .h_flex()
         .gap_2()
-        .child(
-            div()
-                .size(px(28.))
-                .rounded_md()
-                .bg(cx.theme().primary)
-                .h_flex()
-                .justify_center()
-                .child(Icon::new(IconName::ScanText).small().text_color(cx.theme().primary_foreground)),
-        )
+        .child(img(icon_image()).size(px(28.)))
         .child(div().text_lg().font_bold().child("DocBox"))
 }
 
 impl Render for DocBox {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let backend = self.backend.clone();
+        let content = self.render_content(window, cx);
+        window_border().child(
+            div()
+                .size_full()
+                .v_flex()
+                .bg(cx.theme().background)
+                .child(
+                    // Drawn by the app on Linux (GNOME's Wayland has no title bars of its
+                    // own), beside the native controls on macOS and Windows.
+                    TitleBar::new()
+                        .on_close_window(move |_, _, cx| {
+                            backend.shutdown();
+                            cx.quit();
+                        })
+                        .child(div().text_sm().font_medium().child("DocBox")),
+                )
+                .child(div().flex_1().min_h_0().child(content)),
+        )
+    }
+}
+
+impl DocBox {
+    fn render_content(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(state) = self.state.clone() else {
             return self.render_boot(cx).into_any_element();
         };
