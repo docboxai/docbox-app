@@ -34,6 +34,11 @@ from docbox.backend.core.paths import MACOS_BIN_DIRS, get_models_dir
 from docbox.backend.engines.base import ProgressCallback
 from docbox.backend.schemas import OcrLine, OcrResult
 
+# (connect, read). A short connect timeout moves on to the host's next address soon:
+# when one of GitHub's addresses doesn't answer on a network, Windows otherwise waits
+# about 21 s for it.
+_TIMEOUT_S = (5, 30)
+
 _TESSDATA_URL_TEMPLATE = (
     "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/{lang}.traineddata"
 )
@@ -114,7 +119,7 @@ class TesseractEngine:
         with tempfile.NamedTemporaryFile(dir=dest.parent, delete=False) as tmp_file:
             tmp_path = Path(tmp_file.name)
             try:
-                with requests.get(url, stream=True, timeout=30) as resp:
+                with requests.get(url, stream=True, timeout=_TIMEOUT_S) as resp:
                     resp.raise_for_status()
                     total = int(resp.headers.get("content-length", 0))
                     downloaded = 0

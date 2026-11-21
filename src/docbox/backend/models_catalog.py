@@ -237,7 +237,7 @@ registry.register(
             "computer, so most laptops will show it as a poor fit."
         ),
         languages=["ch", "en"],
-        approx_download_mb=2000,
+        approx_download_mb=1970,
         approx_ram_mb=6000,
         min_disk_mb=4000,
         preferred_device="gpu",

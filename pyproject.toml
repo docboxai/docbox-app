@@ -32,7 +32,8 @@ docbox = "docbox.cli.main:run"
 # paddlepaddle 3.3 breaks oneDNN (`ConvertPirAttribute2RuntimeAttribute not support`), and
 # without oneDNN its CPU convolutions take ~5 GB per megapixel of image: a tall screenshot
 # ran out of memory (issue #23). 3.2 runs the same models with oneDNN in a fraction of that.
-paddle = ["paddleocr>=2.9", "paddlepaddle>=3.2,<3.3"]
+# PaddleOCR-VL's pipeline needs paddlex's `ocr` extra; paddleocr itself only asks for `ocr-core`.
+paddle = ["paddleocr>=2.9", "paddlepaddle>=3.2,<3.3", "paddlex[ocr]"]
 # torch/torchvision are listed directly so [tool.uv.sources] can pin them to the CPU-only
 # index (sources only apply to direct dependencies); PyPI's Linux torch wheel bundles CUDA
 # and is several times larger.
@@ -46,6 +47,7 @@ easyocr = ["easyocr>=1.7", "torch>=2.2", "torchvision>=0.17", "opencv-contrib-py
 paddle-gpu = [
     "paddleocr>=2.9 ; (sys_platform == 'win32' or sys_platform == 'linux') and (platform_machine == 'x86_64' or platform_machine == 'AMD64')",
     "paddlepaddle-gpu>=3.2,<3.3 ; (sys_platform == 'win32' or sys_platform == 'linux') and (platform_machine == 'x86_64' or platform_machine == 'AMD64')",
+    "paddlex[ocr] ; (sys_platform == 'win32' or sys_platform == 'linux') and (platform_machine == 'x86_64' or platform_machine == 'AMD64')",
     # Paddle's Windows wheel expects NVIDIA's CUDA toolkit and cuDNN installed system-wide;
     # these are the same libraries its Linux wheel depends on, as NVIDIA's own wheels, which
     # engines/cuda.py puts on the DLL search path before Paddle loads.

@@ -193,7 +193,7 @@ Releases page: install the new version over the old one.
 
 | Engine | Best for | Size | Needs |
 |---|---|---|---|
-| **PaddleOCR** | Everyday scans, receipts, screenshots. Start here. | 20–170 MB per model (+ engine, once) | nothing |
+| **PaddleOCR** | Everyday scans, receipts, screenshots. Start here. | 12–135 MB per model (+ engine, once) | nothing |
 | **PaddleOCR-VL** | Whole pages with tables and headings, in reading order | ~2 GB, powerful computer | nothing |
 | **Tesseract** | Clean printed pages, many languages | ~4 MB per language | the free Tesseract program |
 | **EasyOCR** | Unusual or decorative fonts | ~100 MB (+ larger engine, once) | nothing |
