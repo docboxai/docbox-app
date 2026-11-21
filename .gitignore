@@ -33,3 +33,4 @@ design/
 
 # The GPUI desktop app
 desktop/target/
+desktop/binaries/

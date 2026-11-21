@@ -1,12 +1,12 @@
 name: Release
 
-# Releases come only from main. Bump the version in tauri.conf.json, pyproject.toml and
-# src-tauri/Cargo.toml on main, then push a tag like v0.2.0 on that main commit. The
+# Releases come only from main. Bump the version in pyproject.toml, desktop/Cargo.toml and
+# desktop/Packager.toml on main, then push a tag like v0.2.0 on that main commit. The
 # `check` job refuses anything else before an installer is built. Each `build` job makes
-# one platform's installers, signed for the in-app updater; the `release` job names them
-# DocBox-<version>-<os>-<arch>, writes the updater's latest.json and puts them all in a
-# *draft* GitHub Release. Edit its list of changes, then publish it: that's when installed
-# copies see the update. MSI needs a plain x.y.z version (no "-rc1" suffixes).
+# one platform's installers with cargo-packager, signed for the in-app updater; the
+# `release` job names them DocBox-<version>-<os>-<arch>, writes the updaters' manifests and
+# puts them all in a *draft* GitHub Release. Edit its list of changes, then publish it:
+# that's when installed copies see the update. MSI needs a plain x.y.z version.
 on:
   push:
     tags: ["v*"]
@@ -17,8 +17,8 @@ permissions:
 env:
   # The uv bundled into the app as its Python/env manager. Bump deliberately.
   UV_VERSION: "0.12.3"
-  # The Tauri CLI that builds and bundles the installers. Bump deliberately.
-  TAURI_CLI_VERSION: "2.12.1"
+  # The packager that builds the installers and signs them. Bump deliberately.
+  CARGO_PACKAGER_VERSION: "0.11.8"
 
 jobs:
   check:
@@ -42,14 +42,15 @@ jobs:
       - name: Check the tag matches every version field
         run: |
           tag="${GITHUB_REF_NAME#v}"
-          conf=$(python -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+          conf=$(python -c "import tomllib;print(tomllib.load(open('desktop/Packager.toml','rb'))['version'])")
           py=$(python -c "import tomllib;print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-          cargo=$(python -c "import tomllib;print(tomllib.load(open('src-tauri/Cargo.toml','rb'))['package']['version'])")
-          echo "tag=$tag tauri=$conf pyproject=$py cargo=$cargo"
+          cargo=$(python -c "import tomllib;print(tomllib.load(open('desktop/Cargo.toml','rb'))['package']['version'])")
+          echo "tag=$tag packager=$conf pyproject=$py cargo=$cargo"
           [ "$tag" = "$conf" ] && [ "$tag" = "$py" ] && [ "$tag" = "$cargo" ] || {
             echo "::error::Version mismatch: bump all three to $tag on main before tagging"; exit 1; }
 
-      # Every installed copy, back to 0.1.0, only accepts updates signed with this key.
+      # Every installed copy, back to 0.1.0, only accepts updates signed with this key (the
+      # secret keeps its first name; cargo-packager reads the same key format).
       - name: Check the updater signing key is set
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -74,7 +75,7 @@ jobs:
             uv_asset: uv-x86_64-unknown-linux-gnu.tar.gz
             sidecar: uv-x86_64-unknown-linux-gnu
           # Apple Silicon only: PaddlePaddle publishes no Intel macOS wheel. Not notarized
-          # (no Apple Developer ID yet); tauri.conf.json signs it ad hoc so macOS doesn't
+          # (no Apple Developer ID yet); Packager.toml signs it ad hoc so macOS doesn't
           # call the download damaged.
           - os: macos-latest
             uv_asset: uv-aarch64-apple-darwin.tar.gz
@@ -87,7 +88,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Fetch the pinned uv sidecar (checksum-verified)
+      - name: Fetch the pinned uv to bundle (checksum-verified)
         shell: bash
         run: |
           base="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
@@ -96,7 +97,7 @@ jobs:
           # macOS has shasum but not sha256sum.
           if command -v sha256sum >/dev/null; then sha256sum -c "${{ matrix.uv_asset }}.sha256"
           else shasum -a 256 -c "${{ matrix.uv_asset }}.sha256"; fi
-          mkdir -p src-tauri/binaries uv-unpacked
+          mkdir -p desktop/binaries uv-unpacked
           python - <<'EOF'
           import pathlib, shutil, tarfile, zipfile
           asset = "${{ matrix.uv_asset }}"
@@ -106,65 +107,56 @@ jobs:
               tarfile.open(asset).extractall("uv-unpacked")
           name = "uv.exe" if asset.endswith(".zip") else "uv"
           found = next(pathlib.Path("uv-unpacked").rglob(name))
-          dest = pathlib.Path("src-tauri/binaries/${{ matrix.sidecar }}")
+          dest = pathlib.Path("desktop/binaries/${{ matrix.sidecar }}")
           shutil.copy2(found, dest)
           dest.chmod(0o755)
-          print("sidecar:", dest)
+          print("bundled uv:", dest)
           EOF
 
-      - name: Tauri system dependencies
+      - name: GPUI system dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential libxdo-dev \
-            libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci --prefix frontend
+          sudo apt-get install -y build-essential pkg-config libfontconfig-dev libfreetype-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcb1-dev \
+            libvulkan-dev libasound2-dev libzstd-dev libfuse2
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri
+          workspaces: desktop
       # Third-party actions that build what goes into the installers are pinned to a commit.
       - uses: cargo-bins/cargo-binstall@7bebc2e59eb8820162b7ac8f62a92bfdb2732447 # v1.25.1
-      - run: cargo binstall tauri-cli@=${{ env.TAURI_CLI_VERSION }} --no-confirm
+      - run: cargo binstall cargo-packager@=${{ env.CARGO_PACKAGER_VERSION }} --no-confirm
 
-      # From the repository root, so the CLI takes frontend/ as the frontend directory and
-      # runs tauri.conf.json's beforeBuildCommand there.
       # With the key set, each installer also gets a .sig for the updater (and macOS an
       # .app.tar.gz, the form its updater installs).
       - name: Build the installers
+        working-directory: desktop
+        shell: bash
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: cargo tauri build
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          CARGO_PACKAGER_SIGN_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: cargo packager --release
 
       # The app sets itself up with this uv on first launch, so a package whose uv doesn't
       # run is a package that can't start.
       - name: Check the uv in each Linux package runs
         if: runner.os == 'Linux'
-        run: |
-          sudo apt-get install -y rpm2cpio
-          scripts/check_bundled_uv.sh src-tauri/target/release/bundle "$UV_VERSION"
+        run: scripts/check_bundled_uv.sh desktop/target/release/packages "$UV_VERSION"
 
-      # The installers and their signatures, not Tauri's staging folders beside them.
+      # The installers and their signatures, not the packager's staging folders beside them.
       - uses: actions/upload-artifact@v7
         with:
           name: installers-${{ matrix.os }}
           path: |
-            src-tauri/target/release/bundle/nsis/*-setup.exe
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
-            src-tauri/target/release/bundle/macos/*.app.tar.gz
-            src-tauri/target/release/bundle/**/*.sig
+            desktop/target/release/packages/*-setup.exe
+            desktop/target/release/packages/*.msi
+            desktop/target/release/packages/*.dmg
+            desktop/target/release/packages/*.AppImage
+            desktop/target/release/packages/*.deb
+            desktop/target/release/packages/*.app.tar.gz
+            desktop/target/release/packages/*.sig
           if-no-files-found: error
           # Long enough to re-run the release job.
           retention-days: 7
@@ -198,17 +190,20 @@ jobs:
           name '*.app.tar.gz' "DocBox-$v-macos-arm-64.app.tar.gz"
           name '*.AppImage'   "DocBox-$v-linux-x86-64.AppImage"
           name '*.deb'        "DocBox-$v-linux-x86-64.deb"
-          name '*.rpm'        "DocBox-$v-linux-x86-64.rpm"
           # The .dmg is for first installs only; the updater uses the .app.tar.gz.
           mv installers/**/*.dmg "dist/DocBox-$v-macos-arm-64.dmg"
           left=$(find installers -type f)
           [ -z "$left" ] || { echo "::error::Built but not released: $left"; exit 1; }
           ls -l dist sigs
 
-      # What installed copies download at releases/latest/download/latest.json: for each
-      # platform and kind of install, the file to fetch and its signature. The updater
-      # looks up "<os>-<arch>-<installer>" first, then "<os>-<arch>".
-      - name: Write latest.json
+      # Two manifests, one per updater, both pointing at the files above:
+      # - updates.json, read by the native app (cargo-packager's updater): "<os>-<arch>" with
+      #   the file, its signature and its format.
+      # - latest.json, read by copies from before it (0.1.x, Tauri's updater), which only
+      #   accept that name and format: "<os>-<arch>-<installer>" first, then "<os>-<arch>".
+      #   .rpm installs (no longer built) get no entry: their update check fails and they
+      #   offer the download page instead.
+      - name: Write the update manifests
         env:
           GH_REPO: ${{ github.repository }}
         run: |
@@ -227,7 +222,6 @@ jobs:
               "linux-x86_64": f"DocBox-{v}-linux-x86-64.AppImage",
               "linux-x86_64-appimage": f"DocBox-{v}-linux-x86-64.AppImage",
               "linux-x86_64-deb": f"DocBox-{v}-linux-x86-64.deb",
-              "linux-x86_64-rpm": f"DocBox-{v}-linux-x86-64.rpm",
           }
           platforms = {
               key: {"url": f"{base}/{name}", "signature": pathlib.Path(f"sigs/{name}.sig").read_text().strip()}
@@ -240,8 +234,22 @@ jobs:
               "platforms": platforms,
           }
           pathlib.Path("dist/latest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          native = {
+              "windows-x86_64": (f"DocBox-{v}-windows-x86-64.exe", "nsis"),
+              "macos-aarch64": (f"DocBox-{v}-macos-arm-64.app.tar.gz", "app"),
+              "linux-x86_64": (f"DocBox-{v}-linux-x86-64.AppImage", "appimage"),
+          }
+          manifest["platforms"] = {
+              key: {
+                  "url": f"{base}/{name}",
+                  "signature": pathlib.Path(f"sigs/{name}.sig").read_text().strip(),
+                  "format": fmt,
+              }
+              for key, (name, fmt) in native.items()
+          }
+          pathlib.Path("dist/updates.json").write_text(json.dumps(manifest, indent=2) + "\n")
           EOF
-          cat dist/latest.json
+          cat dist/latest.json dist/updates.json
 
       # GitHub's list of changes since the last release, to edit in the draft. If this
       # fails after the draft exists, delete the draft and re-run the job.

@@ -104,24 +104,26 @@ pub fn data_dir() -> Result<PathBuf, String> {
         .ok_or_else(|| "no per-user data folder on this system".to_string())
 }
 
-/// Where an installed build keeps the bundled backend (`backend/`): next to the program on
-/// Windows, `Contents/Resources` in the macOS app, `lib/DocBox` beside `bin/` on Linux
-/// (the .deb, .rpm and AppImage). `DOCBOX_RESOURCE_DIR` overrides it.
-fn resource_dir(exe_dir: &Path) -> Result<PathBuf, String> {
+/// Where an installed build keeps the bundled backend (`backend/`), as the installers lay it
+/// out (desktop/Packager.toml): next to the program on Windows, `Contents/Resources` in the
+/// macOS app, `lib/<program name>` beside `bin/` on Linux (the .deb and the AppImage).
+/// `DOCBOX_RESOURCE_DIR` overrides it.
+fn resource_dir(exe: &Path) -> Result<PathBuf, String> {
     if let Some(dir) = std::env::var_os("DOCBOX_RESOURCE_DIR").filter(|d| !d.is_empty()) {
         return Ok(PathBuf::from(dir));
     }
+    let exe_dir = exe.parent().ok_or("the program has no parent directory")?;
+    let name = exe.file_stem().map(|s| s.to_os_string()).unwrap_or_default();
     let candidates = [
         exe_dir.to_path_buf(),
         exe_dir.join("../Resources"),
-        exe_dir.join("../lib/DocBox"),
-        exe_dir.join("../lib/docbox"),
+        exe_dir.join("../lib").join(&name),
     ];
     candidates
         .iter()
         .find(|dir| dir.join("backend").join("uv.lock").is_file())
         .cloned()
-        .ok_or_else(|| format!("DocBox's backend files aren't next to {}", exe_dir.display()))
+        .ok_or_else(|| format!("DocBox's backend files aren't next to {}", exe.display()))
 }
 
 pub fn layout() -> Result<Layout, String> {
@@ -146,12 +148,9 @@ pub fn layout() -> Result<Layout, String> {
         });
     }
 
-    let exe_dir = std::env::current_exe()
-        .map_err(|e| e.to_string())?
-        .parent()
-        .ok_or("the program has no parent directory")?
-        .to_path_buf();
-    let project_dir = resource_dir(&exe_dir)?.join("backend");
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_dir = exe.parent().ok_or("the program has no parent directory")?.to_path_buf();
+    let project_dir = resource_dir(&exe)?.join("backend");
     let uv = exe_dir.join(if cfg!(windows) { "uv.exe" } else { "uv" });
     Ok(Layout {
         managed: true,

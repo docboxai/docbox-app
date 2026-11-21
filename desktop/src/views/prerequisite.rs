@@ -288,7 +288,7 @@ impl Render for PrerequisiteCard {
                             .small()
                             .icon(IconName::ExternalLink)
                             .label("Or download it from the official site")
-                            .on_click(move |_, _, cx| cx.open_url(&url)),
+                            .on_click(move |_, _, cx| crate::links::open(cx, &url)),
                     ),
                 );
                 body = body.child(commands);

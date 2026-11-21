@@ -355,7 +355,7 @@ impl ModelsView {
                                     .xsmall()
                                     .label("Published sizes and speeds")
                                     .icon(IconName::ArrowUpRight)
-                                    .on_click(move |_, _, cx| cx.open_url(&url)),
+                                    .on_click(move |_, _, cx| crate::links::open(cx, &url)),
                             )
                         }),
                 )

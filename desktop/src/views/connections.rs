@@ -186,7 +186,7 @@ impl Render for ConnectionsView {
                                 .xsmall()
                                 .icon(IconName::ExternalLink)
                                 .label("Get a key at build.nvidia.com")
-                                .on_click(|_, _, cx| cx.open_url(NVIDIA_KEYS_PAGE)),
+                                .on_click(|_, _, cx| crate::links::open(cx, NVIDIA_KEYS_PAGE)),
                         )
                         .child(
                             Button::new("connect-key")

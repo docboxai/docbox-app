@@ -1,0 +1,55 @@
+# Installers, built with `cargo packager --release` from desktop/ (see .github/workflows/
+# release.yml). Releases are named DocBox-<version>-<os>-<arch> by the release job.
+product-name = "DocBox"
+identifier = "io.github.docboxai.docbox"
+version = "0.1.1"
+description = "Local, hassle-free OCR"
+authors = ["DocBox AI team (Pranav and Pawan)"]
+publisher = "DocBox AI"
+copyright = "Copyright 2026 DocBox AI team (Pranav and Pawan)"
+homepage = "https://github.com/docboxai/docbox-app"
+category = "Productivity"
+out-dir = "target/release/packages"
+before-packaging-command = "cargo build --release"
+icons = ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"]
+# The uv that sets up DocBox's own Python on first launch, next to the program. Release CI
+# downloads a pinned, checksum-verified build to binaries/uv-<target-triple>; for local
+# builds, scripts/desktop_uv_sidecar.sh copies the uv on PATH there.
+external-binaries = ["binaries/uv"]
+# The backend, set up into a private Python environment on first launch
+# (desktop/src/backend.rs, ensure_runtime).
+resources = [
+  { src = "../pyproject.toml", target = "backend/pyproject.toml" },
+  { src = "../uv.lock", target = "backend/uv.lock" },
+  { src = "../.python-version", target = "backend/.python-version" },
+  { src = "../src/docbox", target = "backend/src/docbox" },
+]
+formats = ["nsis", "wix", "app", "dmg", "deb", "appimage"]
+
+[[binaries]]
+path = "docbox-desktop"
+main = true
+
+[macos]
+# Not notarized yet (no Apple Developer ID); signed ad hoc so macOS doesn't call the
+# download damaged.
+signing-identity = "-"
+minimum-system-version = "12.0"
+
+[nsis]
+install-mode = "currentUser"
+installer-icon = "icons/icon.ico"
+header-image = "icons/installer/nsis-header.bmp"
+sidebar-image = "icons/installer/nsis-sidebar.bmp"
+# The uninstaller asks whether to delete these too (a box, unticked by default): the app's
+# data folder, and the one the `docbox` CLI uses when the app's doesn't exist. Results saved
+# in Documents\DocBox are the user's files and always stay.
+appdata-paths = ["$LOCALAPPDATA\\$IDENTIFIER", "$LOCALAPPDATA\\docbox\\DocBox"]
+
+[wix]
+banner-path = "icons/installer/wix-banner.bmp"
+dialog-image-path = "icons/installer/wix-dialog.bmp"
+
+[deb]
+# GPUI draws with Vulkan and reads fonts through fontconfig.
+depends = ["libvulkan1", "libxkbcommon0", "libxkbcommon-x11-0", "libwayland-client0", "libfontconfig1"]

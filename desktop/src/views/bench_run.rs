@@ -770,7 +770,7 @@ impl BenchRunPanel {
                                 .link()
                                 .xsmall()
                                 .label(format!("{}{}", i.source, if i.self_reported { " *" } else { "" }))
-                                .on_click(move |_, _, cx| cx.open_url(&url))
+                                .on_click(move |_, _, cx| crate::links::open(cx, &url))
                                 .into_any_element(),
                         ],
                         details: vec![
