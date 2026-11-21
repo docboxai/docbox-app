@@ -33,11 +33,14 @@ export function useModelJob(model: ModelInfo, onChanged: () => void): ModelJob {
 
   const onChangedRef = useRef(onChanged);
   onChangedRef.current = onChanged;
+  // Jobs this hook saw end. A listing fetched before one ended still shows it running;
+  // adopting it again would see it end again and refresh again, over and over.
+  const endedJobs = useRef(new Set<string>());
 
   // A refreshed listing may reveal a job started elsewhere (e.g. from another view).
   useEffect(() => {
     const job = model.active_job;
-    if (phase !== "idle" || !job || job.job_id === jobId) return;
+    if (phase !== "idle" || !job || job.job_id === jobId || endedJobs.current.has(job.job_id)) return;
     setJobId(job.job_id);
     setProgress(job.progress_pct ?? 0);
     setMessage(job.message);
@@ -61,6 +64,7 @@ export function useModelJob(model: ModelInfo, onChanged: () => void): ModelJob {
             return;
           }
           if (s.state === "done" || s.state === "error") {
+            endedJobs.current.add(jobId);
             if (s.state === "error") setError(s.message ?? "Setup failed");
             setPhase("idle");
             setJobId(null);

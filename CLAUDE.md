@@ -499,7 +499,7 @@ its own transitions, since it sets `translate` and `transition`. See `website/RE
 ### PaddleOCR internals worth knowing before touching `engines/paddleocr_engine.py` or `paddleocr_vl_engine.py`
 
 - Cache location is redirected via the `PADDLE_PDX_CACHE_HOME` env var, set before
-  constructing the pipeline, pointed at DocBox's own `platformdirs` cache dir rather than
+  constructing the pipeline, pointed at `<data>/models/paddlex_cache` rather than
   paddlex's default (the user's home directory).
 - No byte-level download progress from paddlex's downloader — progress is coarse/staged
   (detection model downloading → recognition model downloading → ready), read off

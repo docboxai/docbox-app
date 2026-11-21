@@ -12,7 +12,12 @@ def confirm(question: str, *, yes: bool) -> bool:
     rather than wait forever for an answer."""
     if yes:
         return True
+    no_terminal = Invalid(f"{question} Pass --yes to confirm (there's no terminal to ask).")
     if not sys.stdin.isatty():
-        raise Invalid(f"{question} Pass --yes to confirm (there's no terminal to ask).")
-    answer = input(f"{question} [y/N] ").strip().lower()
+        raise no_terminal
+    try:
+        answer = input(f"{question} [y/N] ").strip().lower()
+    except EOFError:
+        # Windows calls NUL a terminal, so stdin redirected from it gets this far.
+        raise no_terminal from None
     return answer in ("y", "yes")

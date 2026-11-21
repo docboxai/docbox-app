@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import threading
 import time
 from pathlib import Path
@@ -284,3 +285,10 @@ def test_scaled_progress_maps_into_stage_range() -> None:
         lambda: False,
     )(50.0, "x")
     assert job_store.get(job.job_id).progress_pct == pytest.approx(20.0)
+
+
+def test_package_size_from_record_matches_the_files_on_disk() -> None:
+    # Sizes come from RECORD rather than a stat of every file (seconds for Paddle).
+    dist = importlib.metadata.distribution("requests")
+    on_disk = sum(Path(dist.locate_file(f)).stat().st_size for f in dist.files or [])
+    assert runtime._dist_bytes(dist) == on_disk
