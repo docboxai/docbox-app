@@ -4,6 +4,8 @@
 mod api;
 mod backend;
 mod choice;
+#[cfg(test)]
+mod contract_test;
 mod format;
 mod instance;
 mod jobs;

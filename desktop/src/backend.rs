@@ -254,7 +254,7 @@ fn setup_failure(status: ExitStatus, tail: &[String]) -> String {
 
 /// The line the backend prints first when started with `--port 0`:
 /// `{"docbox_backend": {"port": N}}`.
-fn parse_port_report(line: &str) -> Option<u16> {
+pub(crate) fn parse_port_report(line: &str) -> Option<u16> {
     let report: serde_json::Value = serde_json::from_str(line.trim()).ok()?;
     let port = report.get("docbox_backend")?.get("port")?.as_u64()?;
     u16::try_from(port).ok().filter(|port| *port != 0)
