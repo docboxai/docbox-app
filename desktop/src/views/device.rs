@@ -396,7 +396,7 @@ impl Render for DeviceView {
             .flex_wrap()
             .justify_between()
             .gap_3()
-            .child(div().max_w(px(640.)).child(ui::muted(
+            .child(div().flex_1().min_w(px(200.)).max_w(px(640.)).child(ui::muted(
                 "DocBox compares this with what each model needs, so it can tell you which ones will run comfortably here.",
                 cx,
             )))
@@ -427,11 +427,11 @@ impl Render for DeviceView {
             "DocBox's own engines read on the CPU".into()
         };
         let hardware = ui::wrap_row()
-            .child(ui::stat_card("Free memory", format::gb(caps.ram_available_gb), Some(format!("of {} total", format::gb(caps.ram_total_gb)).into()), cx).flex_1().min_w(px(200.)).bg(cx.theme().secondary))
-            .child(ui::stat_card("Processor", format!("{} cores", caps.cpu_physical_cores), Some(format!("{} threads", caps.cpu_logical_cores).into()), cx).flex_1().min_w(px(200.)))
-            .child(ui::stat_card("Free disk", format::gb(caps.disk_free_gb), Some(format!("of {}, for models", format::gb(caps.disk_total_gb)).into()), cx).flex_1().min_w(px(200.)))
-            .child(ui::stat_card("Graphics", caps.gpu_name.as_deref().map_or("CPU only".into(), format::short_gpu), Some(graphics_sub.into()), cx).flex_1().min_w(px(200.)))
-            .child(ui::stat_card("System", caps.os_name.clone(), Some(caps.arch.clone().into()), cx).flex_1().min_w(px(200.)));
+            .child(ui::stat_card("Free memory", format::gb(caps.ram_available_gb), Some(format!("of {} total", format::gb(caps.ram_total_gb)).into()), cx).flex_basis(px(200.)).flex_grow(1.).flex_shrink(1.).min_w_0().bg(cx.theme().secondary))
+            .child(ui::stat_card("Processor", format!("{} cores", caps.cpu_physical_cores), Some(format!("{} threads", caps.cpu_logical_cores).into()), cx).flex_basis(px(200.)).flex_grow(1.).flex_shrink(1.).min_w_0())
+            .child(ui::stat_card("Free disk", format::gb(caps.disk_free_gb), Some(format!("of {}, for models", format::gb(caps.disk_total_gb)).into()), cx).flex_basis(px(200.)).flex_grow(1.).flex_shrink(1.).min_w_0())
+            .child(ui::stat_card("Graphics", caps.gpu_name.as_deref().map_or("CPU only".into(), format::short_gpu), Some(graphics_sub.into()), cx).flex_basis(px(200.)).flex_grow(1.).flex_shrink(1.).min_w_0())
+            .child(ui::stat_card("System", caps.os_name.clone(), Some(caps.arch.clone().into()), cx).flex_basis(px(200.)).flex_grow(1.).flex_shrink(1.).min_w_0());
 
         let saved = self.state.read(cx).settings.as_ref().and_then(|s| s.ram_limit_gb);
         let state = self.state.clone();
@@ -445,7 +445,7 @@ impl Render for DeviceView {
                     .items_start()
                     .justify_between()
                     .gap_4()
-                    .child(div().max_w(px(640.)).child(ui::muted(
+                    .child(div().flex_1().min_w(px(200.)).max_w(px(640.)).child(ui::muted(
                         "The most memory a model may take while it reads. Models over it aren't recommended, and DocBox won't start a read with one, so other apps keep what they need.",
                         cx,
                     )))

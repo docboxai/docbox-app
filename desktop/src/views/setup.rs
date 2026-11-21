@@ -140,8 +140,10 @@ impl SetupView {
         let engine_id = engine.to_string();
         ui::card(cx)
             .id(SharedString::from(format!("engine-{engine}")))
-            .flex_1()
-            .min_w(px(170.))
+            .flex_basis(px(170.))
+            .flex_grow(1.)
+            .flex_shrink(1.)
+            .min_w_0()
             .min_h(px(132.))
             .justify_between()
             .p_4()
@@ -218,7 +220,7 @@ impl SetupView {
                 .flex_wrap()
                 .justify_between()
                 .gap_3()
-                .child(div().flex_1().min_w(px(240.)).child(ui::muted(
+                .child(div().flex_basis(px(240.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(ui::muted(
                     format!("{} One click sets up everything it needs ({}).", model.description, size_label(model)),
                     cx,
                 )))
@@ -255,8 +257,10 @@ impl SetupView {
             ui::stat_button(id, label, value, IconName::ArrowUpRight, move |_, _, cx| {
                 state.update(cx, |s, cx| s.navigate(View::Device, cx))
             }, cx)
-            .flex_1()
-            .min_w(px(160.))
+            .flex_basis(px(160.))
+            .flex_grow(1.)
+            .flex_shrink(1.)
+            .min_w_0()
         };
         let state = self.state.clone();
         div()
@@ -283,8 +287,10 @@ impl SetupView {
                     ))
                     .child(
                         ui::card(cx)
-                            .flex_1()
-                            .min_w(px(160.))
+                            .flex_basis(px(160.))
+                            .flex_grow(1.)
+                            .flex_shrink(1.)
+                            .min_w_0()
                             .gap_1()
                             .px_4()
                             .py_3()
@@ -342,8 +348,10 @@ impl SetupView {
                 ui::wrap_row()
                     .child(
                         ui::card(cx)
-                            .flex_1()
-                            .min_w(px(360.))
+                            .flex_basis(px(360.))
+                            .flex_grow(1.)
+                            .flex_shrink(1.)
+                            .min_w_0()
                             .gap_2()
                             .p_5()
                             .child(div().text_2xl().font_semibold().child(format::engine_label(&engine)))
@@ -351,8 +359,10 @@ impl SetupView {
                     )
                     .child(
                         ui::card(cx)
-                            .flex_1()
-                            .min_w(px(300.))
+                            .flex_basis(px(300.))
+                            .flex_grow(1.)
+                            .flex_shrink(1.)
+                            .min_w_0()
                             .gap_2()
                             .p_5()
                             .bg(cx.theme().secondary)
@@ -441,7 +451,7 @@ impl SetupView {
             );
         }
 
-        let mut row = ui::wrap_row().items_start().child(div().flex_1().min_w(px(420.)).child(ui::section("Versions", list, cx)));
+        let mut row = ui::wrap_row().items_start().child(div().flex_basis(px(420.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(ui::section("Versions", list, cx)));
         if let Some((model, job)) = selected {
             let mut panel = ui::card(cx)
                 .gap_3()
@@ -485,8 +495,8 @@ impl Render for SetupView {
                 ui::wrap_row()
                     .gap_4()
                     .items_end()
-                    .child(div().flex_1().min_w(px(420.)).child(ui::section("Recommended start", recommended, cx)))
-                    .child(div().flex_1().min_w(px(420.)).child(ui::section("This device", device, cx))),
+                    .child(div().flex_basis(px(420.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(ui::section("Recommended start", recommended, cx)))
+                    .child(div().flex_basis(px(420.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(ui::section("This device", device, cx))),
             )
             .child(
                 div()

@@ -390,7 +390,7 @@ impl ReadView {
                     .v_flex()
                     .items_center()
                     .gap_1()
-                    .child(div().text_2xl().font_semibold().child(if n > 0 {
+                    .child(div().text_2xl().font_semibold().text_center().child(if n > 0 {
                         format!("{} ready to read", format::plural(n, "file", "files"))
                     } else {
                         "Drop a PDF or image here".into()
@@ -432,6 +432,8 @@ impl ReadView {
         zone.child(
             div()
                 .h_flex()
+                .flex_wrap()
+                .justify_center()
                 .gap_2()
                 .child(
                     Button::new("choose-files")
@@ -585,8 +587,10 @@ impl ReadView {
                 grid = grid.child(
                     ui::card(cx)
                         .id(SharedString::from(format!("recent-{}", r.id)))
-                        .flex_1()
-                        .min_w(px(200.))
+                        .flex_basis(px(200.))
+                        .flex_grow(1.)
+                        .flex_shrink(1.)
+                        .min_w_0()
                         .max_w(px(320.))
                         .min_h(px(116.))
                         .justify_between()
@@ -808,8 +812,10 @@ impl ReadView {
                     .child(
                         div()
                             .v_flex()
-                            .flex_1()
-                            .min_w(px(240.))
+                            .flex_basis(px(240.))
+                            .flex_grow(1.)
+                            .flex_shrink(1.)
+                            .min_w_0()
                             .child(div().text_xl().font_semibold().child(s.file_name.clone()))
                             .child(ui::small_muted(meta.join(" · "), cx)),
                     )
@@ -834,8 +840,8 @@ impl Render for ReadView {
                 ui::wrap_row()
                     .gap_4()
                     .items_end()
-                    .child(div().flex_1().min_w(px(420.)).child(ui::section("Add documents", zone, cx)))
-                    .child(div().flex_1().min_w(px(420.)).child(ui::section("Run with", run, cx))),
+                    .child(div().flex_basis(px(420.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(ui::section("Add documents", zone, cx)))
+                    .child(div().flex_basis(px(420.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(ui::section("Run with", run, cx))),
             )
             .child(recent)
             .when_some(panel, |d, p| d.child(p))

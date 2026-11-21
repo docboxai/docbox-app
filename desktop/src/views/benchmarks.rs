@@ -305,7 +305,7 @@ impl BenchmarksView {
                     .v_flex()
                     .items_center()
                     .gap_1()
-                    .child(div().text_2xl().font_semibold().child(if documents > 0 {
+                    .child(div().text_2xl().font_semibold().text_center().child(if documents > 0 {
                         format!("{} in this batch", format::plural(documents, "document", "documents"))
                     } else {
                         "Drop a folder of documents".into()
@@ -501,8 +501,10 @@ impl BenchmarksView {
             grid = grid.child(
                 ui::card(cx)
                     .id(SharedString::from(format!("batch-{}", run.id)))
-                    .flex_1()
-                    .min_w(px(220.))
+                    .flex_basis(px(220.))
+                    .flex_grow(1.)
+                    .flex_shrink(1.)
+                    .min_w_0()
                     .max_w(px(320.))
                     .min_h(px(132.))
                     .justify_between()
@@ -554,8 +556,8 @@ impl Render for BenchmarksView {
                 ui::wrap_row()
                     .gap_4()
                     .items_stretch()
-                    .child(div().flex_1().min_w(px(420.)).v_flex().child(ui::section("New benchmark", zone, cx).flex_1()))
-                    .child(div().flex_1().min_w(px(420.)).v_flex().child(ui::section("Compare with", compare, cx).flex_1())),
+                    .child(div().flex_basis(px(420.)).flex_grow(1.).flex_shrink(1.).min_w_0().v_flex().child(ui::section("New benchmark", zone, cx).flex_1()))
+                    .child(div().flex_basis(px(420.)).flex_grow(1.).flex_shrink(1.).min_w_0().v_flex().child(ui::section("Compare with", compare, cx).flex_1())),
             )
             .child(batches)
             .when_some(self.selected.clone(), |d, panel| d.child(panel))

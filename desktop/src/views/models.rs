@@ -192,7 +192,7 @@ impl ModelsView {
                         .items_end()
                         .justify_between()
                         .gap_3()
-                        .child(div().max_w(px(420.)).child(ui::muted(
+                        .child(div().flex_1().min_w(px(200.)).max_w(px(420.)).child(ui::muted(
                             if suggestion.is_some() {
                                 "The default is picked first whenever you read a file."
                             } else {
@@ -363,7 +363,8 @@ impl ModelsView {
             .when(device.gpu_capable, |d| d.child(self.device_choice(model, cx)))
     }
 
-    fn library(&self, cx: &mut Context<Self>) -> Div {
+    /// `wide`: room for the Engine column, which drops out first as the window narrows.
+    fn library(&self, wide: bool, cx: &mut Context<Self>) -> Div {
         let rows = self.filtered(cx);
         let border = cx.theme().border;
         let hover = cx.theme().accent;
@@ -376,8 +377,8 @@ impl ModelsView {
                 .gap_4()
                 .border_b_1()
                 .border_color(border)
-                .child(header("Model").flex_1())
-                .child(header("Engine").w(px(110.)))
+                .child(header("Model").flex_1().min_w(px(140.)))
+                .when(wide, |d| d.child(header("Engine").w(px(110.))))
                 .child(header("Size").w(px(72.)))
                 .child(header("On this computer").w(px(170.)))
                 .child(div().w(px(150.))),
@@ -419,7 +420,7 @@ impl ModelsView {
                             div()
                                 .h_flex()
                                 .flex_1()
-                                .min_w_0()
+                                .min_w(px(140.))
                                 .gap_2()
                                 .child(
                                     Icon::new(if open { IconName::ChevronUp } else { IconName::ChevronDown })
@@ -428,7 +429,7 @@ impl ModelsView {
                                 )
                                 .child(div().text_sm().font_medium().truncate().child(model.name.clone())),
                         )
-                        .child(div().w(px(110.)).text_sm().text_color(cx.theme().muted_foreground).truncate().child(format::engine_label(&model.engine)))
+                        .when(wide, |d| d.child(div().w(px(110.)).text_sm().text_color(cx.theme().muted_foreground).truncate().child(format::engine_label(&model.engine))))
                         .child(div().w(px(72.)).text_sm().text_color(cx.theme().muted_foreground).child(size_label(model)))
                         .child(div().w(px(170.)).child(ui::fit_chip(ok, model.fit.summary.clone())))
                         .child(div().w(px(150.)).h_flex().justify_end().child(model_actions::action_cell(job, &self.state, cx))),
@@ -446,8 +447,10 @@ impl ModelsView {
                         .child(
                             div()
                                 .v_flex()
-                                .flex_1()
-                                .min_w(px(320.))
+                                .flex_basis(px(320.))
+                                .flex_grow(1.)
+                                .flex_shrink(1.)
+                                .min_w_0()
                                 .gap_2()
                                 .child(ui::muted(model.description.clone(), cx))
                                 .child(self.figures(model, cx))
@@ -455,7 +458,7 @@ impl ModelsView {
                                     d.child(div().text_xs().text_color(cx.theme().warning).child(model.fit.reasons.join("; ")))
                                 }),
                         )
-                        .child(div().flex_1().min_w(px(300.)).child(model_actions::setup_panel(job, &self.state, true, cx))),
+                        .child(div().flex_basis(px(300.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(model_actions::setup_panel(job, &self.state, true, cx))),
                 );
             } else if let Some(err) = job.read(cx).error.clone() {
                 row = row.child(div().pl(px(38.)).pb_3().child(ui::error_text(err, cx)));
@@ -582,10 +585,11 @@ impl ModelsView {
 }
 
 impl Render for ModelsView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let wide = window.viewport_size().width >= px(1100.);
         let default_card = self.default_card(cx);
         let storage_cards = self.storage_cards(cx);
-        let library = self.library(cx);
+        let library = self.library(wide, cx);
         let filters = self.engine_filters(cx);
         let engines = self.storage.clone().map(|info| {
             let count = info.engines.len();
@@ -613,8 +617,8 @@ impl Render for ModelsView {
                 ui::wrap_row()
                     .gap_4()
                     .items_end()
-                    .child(div().flex_1().min_w(px(420.)).child(ui::section("Default model", default_card, cx)))
-                    .child(div().flex_1().min_w(px(420.)).child(ui::section("Storage", storage_cards, cx))),
+                    .child(div().flex_basis(px(420.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(ui::section("Default model", default_card, cx)))
+                    .child(div().flex_basis(px(420.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(ui::section("Storage", storage_cards, cx))),
             )
             .child(
                 div()

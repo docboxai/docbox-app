@@ -389,6 +389,7 @@ impl Render for DocBox {
                             .child(
                                 div()
                                     .h_flex()
+                                    .flex_wrap()
                                     .items_end()
                                     .justify_between()
                                     .gap_4()

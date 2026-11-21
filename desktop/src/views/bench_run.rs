@@ -884,7 +884,7 @@ impl BenchRunPanel {
             )
             .child(ui::small_muted(file.id.clone(), cx).truncate());
 
-        let mut right = div().v_flex().flex_1().min_w(px(320.)).gap_3();
+        let mut right = div().v_flex().flex_basis(px(320.)).flex_grow(1.).flex_shrink(1.).min_w_0().gap_3();
         let view = self.page_view.clone();
         if view.as_ref().is_some_and(|v| v.reference_kind == "reference") {
             let reference = view.as_ref().and_then(|v| v.reference.clone()).unwrap_or_default();
@@ -1113,7 +1113,7 @@ impl Render for BenchRunPanel {
                     .py_4()
                     .border_b_1()
                     .border_color(cx.theme().border)
-                    .child(div().v_flex().flex_1().min_w(px(240.)).child(div().text_xl().font_semibold().child(run.name.clone())).child(ui::small_muted(meta, cx)))
+                    .child(div().v_flex().flex_basis(px(240.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(div().text_xl().font_semibold().child(run.name.clone())).child(ui::small_muted(meta, cx)))
                     .child(actions),
             )
             .child(body)

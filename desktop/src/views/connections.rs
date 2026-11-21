@@ -125,7 +125,7 @@ impl ConnectionsView {
     }
 
     fn connection(&self, title: &str, where_: &str, status: Option<&PlatformStatus>, body: impl IntoElement, cx: &App) -> Div {
-        div().flex_1().min_w(px(340.)).child(ui::section(
+        div().flex_basis(px(340.)).flex_grow(1.).flex_shrink(1.).min_w_0().child(ui::section(
             where_.to_string(),
             ui::card(cx)
                 .flex_1()

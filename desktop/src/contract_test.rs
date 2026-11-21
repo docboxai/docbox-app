@@ -3,6 +3,10 @@
 //! (tests/bench_fakes.py, which read instantly), then goes through every route the app
 //! uses and deserializes each answer, reading a file and running a benchmark end to end.
 //! Skipped when the repository has no `.venv` (run `uv sync` first).
+//!
+//! The backend keeps its settings in the user's config folder, not the data folder, so the
+//! test points `XDG_CONFIG_HOME` and `HOME` at its own folder (Linux and macOS). Windows
+//! has no such override, so it doesn't run there: it would change the real settings.
 
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
@@ -55,6 +59,8 @@ fn start(python: &Path) -> (Server, Api) {
         .args(["-c", script])
         .current_dir(repo())
         .env("DOCBOX_DATA_DIR", &data)
+        .env("XDG_CONFIG_HOME", data.join("config"))
+        .env("HOME", data.join("home"))
         .env("PYTHONPATH", python_path())
         // Benchmark workers register the fakes too.
         .env("DOCBOX_PRELOAD", "bench_fakes")
@@ -91,6 +97,7 @@ fn page_image(python: &Path, path: &Path) {
     assert!(ok.success());
 }
 
+#[cfg(unix)]
 #[test]
 fn every_route_the_app_uses_answers_in_the_shape_it_expects() {
     let Some(python) = python() else {
@@ -121,6 +128,10 @@ fn every_route_the_app_uses_answers_in_the_shape_it_expects() {
         ..Default::default()
     };
     assert_eq!(api.update_settings(&patch).unwrap().default_model_id.as_deref(), Some("fake-good"));
+    assert!(
+        std::fs::read_dir(server.data.join("config")).is_ok(),
+        "the settings must be written under the test's own folder"
+    );
 
     // Read a file, end to end.
     let docs = server.data.join("docs");
