@@ -186,14 +186,31 @@ def test_only_the_managed_app_writes_its_runtime_state(monkeypatch, data_dir, mo
 
 
 @pytest.mark.skipif(shutil.which("uv") is None, reason="needs uv")
-def test_pins_match_the_lock_file(tmp_path) -> None:
+@pytest.mark.parametrize("name, extras", [
+    ("constraints.txt", ["paddle", "easyocr", "agents"]),
+    ("constraints-paddle-gpu.txt", ["paddle-gpu"]),
+    ("constraints-easyocr-gpu.txt", ["easyocr-gpu"]),
+])
+def test_pins_match_the_lock_file(name, extras) -> None:
     """scripts/export_pins.sh output is committed; regenerate it after changing uv.lock."""
     exported = subprocess.run(
-        ["uv", "export", "--frozen", "--all-extras", "--no-dev", "--no-emit-project",
-         "--no-hashes", "--no-header", "--no-annotate"],
+        ["uv", "export", "--frozen", "--no-dev", "--no-emit-project",
+         "--no-hashes", "--no-header", "--no-annotate",
+         *(arg for extra in extras for arg in ("--extra", extra))],
         cwd=ROOT, capture_output=True, text=True, check=True,
     ).stdout
-    pins = ROOT / "src" / "docbox" / "backend" / "core" / "pins" / "constraints.txt"
+    pins = ROOT / "src" / "docbox" / "backend" / "core" / "pins" / name
     assert pins.read_text(encoding="utf-8").replace("\r\n", "\n") == exported.replace("\r\n", "\n"), (
         "pins are stale: run scripts/export_pins.sh"
     )
+
+
+def test_tool_mode_gpu_build_uses_its_own_pins_and_the_cuda_indexes(monkeypatch) -> None:
+    monkeypatch.setenv("DOCBOX_UV", "uv")
+    if not runtime._extra_requirements("paddle-gpu"):
+        pytest.skip("paddle-gpu is empty on this platform")
+    cmd = runtime.pip_install_command("paddle-gpu")
+    assert Path(cmd[6]).name == "constraints-paddle-gpu.txt" and Path(cmd[6]).exists()
+    assert "https://www.paddlepaddle.org.cn/packages/stable/cu126/" in cmd
+    assert "https://download.pytorch.org/whl/cpu" not in cmd
+    assert any(r.startswith("paddlepaddle-gpu") for r in cmd)

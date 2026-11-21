@@ -103,6 +103,41 @@ def set_ram_limit_gb(limit_gb: float | None) -> None:
     _update(ram_limit_gb=limit_gb or None)
 
 
+def get_device_preference() -> str:
+    """"auto", "cpu" or "gpu": where models read (core/gpu.py)."""
+    value = _read().get("device_preference")
+    return value if value in ("cpu", "gpu") else "auto"
+
+
+def set_device_preference(preference: str) -> None:
+    _update(device_preference=None if preference == "auto" else preference)
+
+
+def get_model_devices() -> dict[str, str]:
+    """Models set to read on "cpu" or "gpu" whatever the global preference says."""
+    saved = _read().get("model_devices")
+    if not isinstance(saved, dict):
+        return {}
+    return {k: v for k, v in saved.items() if v in ("cpu", "gpu")}
+
+
+def set_model_devices(changes: dict[str, str]) -> None:
+    """Merge per-model devices into the saved ones; "auto" removes a model's."""
+    with _locked():
+        data = _read()
+        saved = data.get("model_devices") if isinstance(data.get("model_devices"), dict) else {}
+        for model_id, device in changes.items():
+            if device in ("cpu", "gpu"):
+                saved[model_id] = device
+            else:
+                saved.pop(model_id, None)
+        if saved:
+            data["model_devices"] = saved
+        else:
+            data.pop("model_devices", None)
+        _write(data)
+
+
 def get_output_dir() -> Path:
     custom = _read().get("output_dir")
     if custom:

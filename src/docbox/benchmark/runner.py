@@ -289,6 +289,8 @@ class _Worker:
 
         if self.in_process:
             model.peak_memory_mb = round(self.peak_bytes / 2**20, 1) if self.peak_bytes else None
+            if model.device == "gpu":
+                model.memory_note = "Read on the graphics card; its memory isn't counted here."
         else:
             # The worker only sends requests: its own memory says nothing about the model's.
             model.peak_memory_mb = None
@@ -341,6 +343,7 @@ class _Worker:
                 loaded = True
                 self.model.load_seconds = event.get("seconds")
                 self.in_process = event.get("in_process", True)
+                self.model.device = event.get("device")
             elif kind == "page":
                 self._page(event)
             elif kind == "file_error":

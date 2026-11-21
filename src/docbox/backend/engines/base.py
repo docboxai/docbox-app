@@ -16,8 +16,9 @@ ProgressCallback = Callable[[float, str], None]
 class OCREngine(Protocol):
     """A runnable OCR backend for one specific model.
 
-    `device` is threaded through engine factories today only as a forward-compatible
-    slot (currently always "cpu"); v1 does not implement GPU acceleration.
+    An engine with a graphics-card build (PaddleOCR, PaddleOCR-VL, EasyOCR) also has
+    `use_device("cpu" | "gpu")`, called before `load()` by core/gpu.py::load, which picks
+    the device and falls back to the processor when the card fails.
 
     An engine whose model runs in another program's process (Ollama, a cloud API, an
     engine container) sets the class attribute `runs_in_process = False`: the memory a

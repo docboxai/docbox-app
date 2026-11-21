@@ -20,6 +20,7 @@ from docbox import __version__
 from docbox.backend.schemas import (
     DownloadStatus,
     EngineRemoveResult,
+    GpuStatus,
     ModelInfo,
     OcrLine,
     ReadDetail,
@@ -144,6 +145,29 @@ def list_engines() -> StorageInfo:
 def remove_engine(engine: Literal["paddle", "easyocr"]) -> EngineRemoveResult:
     """Uninstall an engine and every model it downloaded. Ask the user first."""
     return _call(engines.remove_engine, engine)
+
+
+@server.tool(annotations=_READ_ONLY)
+def get_gpu() -> GpuStatus:
+    """The NVIDIA graphics card, whether DocBox's engines can read on it (and why not), and
+    which build of each engine is installed: "cpu" or "gpu"."""
+    return engines.gpu_status()
+
+
+@server.tool(annotations=_DOWNLOADS)
+def switch_engine_build(
+    engine: Literal["paddle", "easyocr"], build: Literal["cpu", "gpu"],
+) -> DownloadStatus:
+    """Install an engine's graphics-card build ("gpu", a 2-4 GB download: get_gpu says how
+    much) or its processor build in place of the other. Ask the user first. Returns at once
+    with a job; poll get_build_status(job_id)."""
+    return _call(engines.start_switch_build, engine, build)
+
+
+@server.tool(annotations=_READ_ONLY)
+def get_build_status(job_id: str) -> DownloadStatus:
+    """Progress of a switch started with switch_engine_build."""
+    return _call(engines.build_status, job_id)
 
 
 # --- reading ----------------------------------------------------------------------------
@@ -306,7 +330,8 @@ def get_read(
 
 @server.tool(annotations=_READ_ONLY)
 def get_settings() -> Settings:
-    """The default model, the cloud-engine switch, the RAM limit and the output folder."""
+    """The default model, the cloud-engine switch, the RAM limit, where models read
+    (device_preference, model_devices) and the output folder."""
     return settings_service.get_settings()
 
 
@@ -314,13 +339,19 @@ def get_settings() -> Settings:
 def update_settings(
     default_model_id: str | None = None, cloud_enabled: bool | None = None,
     ram_limit_gb: float | None = None,
+    device_preference: Literal["auto", "cpu", "gpu"] | None = None,
+    model_devices: dict[str, Literal["auto", "cpu", "gpu"]] | None = None,
 ) -> Settings:
     """Change the default model ("" clears it), the cloud-engine switch (NVIDIA NIM
-    sends images to NVIDIA's cloud: only turn it on when the user asks) and/or the RAM
-    limit, the most memory a model may take while reading (0 removes it)."""
+    sends images to NVIDIA's cloud: only turn it on when the user asks), the RAM
+    limit, the most memory a model may take while reading (0 removes it), and/or where
+    models read: device_preference "auto" (the graphics card for the models that read
+    best there, when its engine's graphics-card build is installed), "cpu" or "gpu", and
+    model_devices, per model ("auto" makes one follow device_preference again)."""
     return _call(settings_service.update_settings,
                  SettingsUpdate(default_model_id=default_model_id, cloud_enabled=cloud_enabled,
-                                ram_limit_gb=ram_limit_gb))
+                                ram_limit_gb=ram_limit_gb, device_preference=device_preference,
+                                model_devices=model_devices))
 
 
 # --- benchmarks -------------------------------------------------------------------------

@@ -24,9 +24,15 @@ export interface FitResult {
 }
 
 export type Device = "cpu" | "gpu";
+// Where models read (settings): "auto" puts the ones that read best on a graphics card there.
+export type DevicePreference = "auto" | Device;
 
 export interface InferenceDevice {
   runs_on: Device;
+  // The setting deciding it: the model's own, else the global one.
+  setting: DevicePreference;
+  // Whether its engine has a graphics-card build DocBox can install (PaddleOCR, EasyOCR).
+  gpu_capable: boolean;
   // Where it reads best: "gpu" when a graphics card makes it several times faster.
   preferred: Device;
   // How many times faster on a graphics card, from the model's published timings.
@@ -139,6 +145,9 @@ export interface Settings {
   output_dir: string;
   // The most memory a model may take while reading; null: no limit.
   ram_limit_gb: number | null;
+  device_preference: DevicePreference;
+  // Models set to a device other than what device_preference gives them.
+  model_devices: Record<string, Device>;
 }
 
 // Fields left out are unchanged; default_model_id "" clears the default, ram_limit_gb 0
@@ -147,6 +156,35 @@ export interface SettingsUpdate {
   default_model_id?: string;
   cloud_enabled?: boolean;
   ram_limit_gb?: number;
+  device_preference?: DevicePreference;
+  // Merged into the saved ones; "auto" makes a model follow device_preference again.
+  model_devices?: Record<string, DevicePreference>;
+}
+
+export interface EngineGpuBuild {
+  id: string;
+  name: string;
+  // Which build is installed; null: the engine isn't.
+  installed: Device | null;
+  gpu_download_mb: number;
+  // Why it can't switch to the graphics card now, or null.
+  blocked: string | null;
+  // A switch that waits for DocBox to restart (the engine was in use).
+  pending_restart: boolean;
+  job: DownloadStatus | null;
+}
+
+export interface GpuStatus {
+  usable: boolean;
+  reason: string | null;
+  name: string | null;
+  driver_version: string | null;
+  cuda_version: string | null;
+  cuda_required: string;
+  compute_capability: string | null;
+  memory_total_gb: number | null;
+  memory_free_gb: number | null;
+  engines: EngineGpuBuild[];
 }
 
 export type OutputFormat = "txt" | "md" | "pdf" | "json";
@@ -198,8 +236,11 @@ export interface ModelRun {
   error: string | null;
   load_seconds: number | null;
   peak_memory_mb: number | null;
-  // Why there's no memory figure: the model runs in another program's process.
+  // Why there's no memory figure: the model runs in another program's process, or read on
+  // the graphics card, whose memory isn't counted.
   memory_note: string | null;
+  // Where it read; null for runs from before DocBox could use a graphics card.
+  device: Device | null;
 }
 
 export interface LeaderboardRow {
@@ -226,6 +267,7 @@ export interface LeaderboardRow {
   family: string | null;
   variant: string | null;
   memory_note: string | null;
+  device: Device | null;
 }
 
 export interface BenchSummary {
@@ -397,6 +439,15 @@ export const api = {
   openModelsFolder: () => request<void>("/api/engines/storage/open", { method: "POST" }),
   uninstallEngine: (id: string) =>
     request<EngineRemoveResult>(`/api/engines/${id}`, { method: "DELETE" }),
+  gpuStatus: () => request<GpuStatus>("/api/engines/gpu"),
+  switchEngineBuild: (id: string, build: Device) =>
+    request<DownloadStatus>(`/api/engines/${id}/build`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ build }),
+    }),
+  engineBuildStatus: (jobId: string) =>
+    request<DownloadStatus>(`/api/engines/build/status?job_id=${encodeURIComponent(jobId)}`),
   listPlatforms: () => request<PlatformStatus[]>("/api/platforms"),
   setNvidiaApiKey: (apiKey: string) =>
     request<NvidiaApiKeyStatus>("/api/platforms/nvidia-nim/api-key", {

@@ -31,6 +31,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
+from docbox.backend.core import gpu
 from docbox.backend.core.registry import ModelSpec
 from docbox.backend.engines.base import OCREngine
 
@@ -128,7 +129,9 @@ def loaded(spec: ModelSpec) -> Iterator[OCREngine]:
                 if not entry.engine.is_downloaded():
                     raise NotDownloaded(spec)
                 if not entry.loaded:
-                    entry.engine.load()
+                    # On the graphics card when it should be (core/gpu.py). A change of
+                    # device settings or engine build evicts loaded engines.
+                    gpu.load(spec, entry.engine)
                     entry.loaded = True
             except BaseException:
                 # Never keep an engine that failed to load or lost its files.

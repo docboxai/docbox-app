@@ -8,8 +8,8 @@ from collections.abc import Callable
 
 import docbox.backend.models_catalog  # noqa: F401 — importing it fills the registry
 from docbox.backend import platforms
-from docbox.backend.core import config_store, engine_cache, locks, prerequisites, runtime
-from docbox.backend.core.device import get_device_capabilities
+from docbox.backend.core import config_store, engine_cache, gpu, locks, prerequisites, runtime
+from docbox.backend.core.device import get_device_capabilities, gpu_free_memory_gb
 from docbox.backend.core.jobs import DownloadJob, JobPaused, job_store
 from docbox.backend.core.registry import (
     ModelSpec,
@@ -44,10 +44,29 @@ class _Snapshot:
         self.caps = get_device_capabilities()
         self.ram_limit_gb = config_store.get_ram_limit_gb()
         self.extras = runtime.installed_extras()
+        self.gpu_builds = {e for e in self.extras if runtime.build_of(e) == "gpu"}
+        self.gpu_support = gpu.support()
+        self.gpu_free_gb = (
+            gpu_free_memory_gb() if self.gpu_support.usable and self.gpu_builds else None
+        )
+        self.preference = config_store.get_device_preference()
+        self.model_devices = config_store.get_model_devices()
         self._prereqs: dict[str, bool] = {}
         # Only the built-in catalog is ranked; Ollama and cloud models never are.
         pick = recommend(registry.list(), self.caps, self.ram_limit_gb)
         self.recommended_id = pick.id if pick else None
+
+    def gpu_choice(self, spec: ModelSpec) -> gpu.Choice | None:
+        if not gpu.gpu_capable(spec):
+            return None
+        return gpu.choose(
+            spec,
+            setting=self.model_devices.get(spec.id) or self.preference,
+            supported=self.gpu_support,
+            gpu_build=spec.requires_extra in self.gpu_builds,
+            free_gb=self.gpu_free_gb,
+            fallback=gpu.fallback_for(spec.id),
+        )
 
     def prereq_ok(self, prereq_id: str) -> bool:
         if prereq_id not in self._prereqs:
@@ -97,7 +116,7 @@ def _to_model_info(spec: ModelSpec, snap: _Snapshot) -> ModelInfo:
         cpu_page_seconds=spec.cpu_page_seconds,
         figures_source=spec.figures_source,
         min_disk_mb=spec.min_disk_mb,
-        device=inference_device(spec, snap.caps),
+        device=inference_device(spec, snap.caps, snap.gpu_choice(spec)),
         downloaded=downloaded,
         engine_installed=engine_installed,
         status=status,

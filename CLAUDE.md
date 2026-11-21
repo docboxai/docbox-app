@@ -31,7 +31,8 @@ See "Packaging and the managed runtime" below for how installed builds get Pytho
 
 ```sh
 uv python pin 3.12      # already pinned via .python-version
-uv sync --extra paddle  # base deps + PaddleOCR; --all-extras adds EasyOCR/PyTorch
+uv sync --extra paddle  # base deps + PaddleOCR; add --extra easyocr for EasyOCR/PyTorch
+# (not --all-extras: the -gpu extras conflict with the CPU ones, see "graphics card" below)
 npm --prefix frontend install
 cargo install tauri-cli --version "^2" --locked   # once, for `cargo tauri`
 ```
@@ -141,7 +142,7 @@ step for frontend changes.
   model's published tables (`figures_source`, which must be on the opener allow-list).
   `preferred_device` ("gpu" when a graphics card makes it several times faster) and
   `inference_device()` give `ModelInfo.device`: where it reads here and what would be
-  faster. DocBox's own engines still run on the CPU; only Ollama uses a GPU.
+  faster (see "Reading on a graphics card" below).
 
 `src/docbox/backend/engines/base.py` defines the `OCREngine` Protocol every engine
 implements: `is_downloaded()`, `download(progress_cb)`, `load()`, `run(image) -> OcrResult`.
@@ -222,6 +223,36 @@ applied by `ensure_runtime` at next launch) when the engine was imported this se
 the extra (0–40%) before the weights (40–100%). Engine modules must import their heavy
 packages lazily (inside methods): `models_catalog.py` imports every engine module even
 when its extra isn't installed.
+
+#### Reading on a graphics card
+
+PaddleOCR (and PaddleOCR-VL) and EasyOCR also have a graphics-card build: the `paddle-gpu`
+and `easyocr-gpu` extras, CUDA 12.6 (`paddlepaddle-gpu` from Paddle's own index, torch from
+PyTorch's cu126 index; Windows and Linux x86_64 only, empty elsewhere). Each conflicts with
+its CPU extra (same modules) and with the other (on Linux Paddle pins NCCL 2.25.1 exactly,
+every torch cu126 build another), declared in `[tool.uv] conflicts`: one engine at a time
+uses the card, and `--all-extras` no longer works. Paddle's Windows wheel ships no CUDA
+DLLs, so the extra adds NVIDIA's runtime wheels there and `engines/cuda.py` puts their
+`bin` dirs on the DLL search path before Paddle loads. `runtime.switch_build` installs one
+build in place of the other with an exact sync (tool mode: uninstall the swapped dists,
+then `uv pip install` with `pins/constraints-<extra>.txt`), deferred to a restart like a
+removal when the engine is loaded; `installed_extras()` still names the engine, `build_of()`
+says which build, and state.json's `extras` (`synced_extras()`) names the build so
+`ensure_runtime` re-syncs the right one. It's a 2–4 GB Python package install
+(`runtime.GPU_DOWNLOAD_MB`, measured from uv.lock), so it only happens when the user picks
+it (Device view, `docbox engines build`, MCP `switch_engine_build`), never on its own.
+
+`core/gpu.py` decides where each model reads: `support()` (an NVIDIA card via nvidia-smi in
+`core/device.py`, driver CUDA ≥ 12.6, compute capability 6.0–9.x: no RTX 50 series on the
+cu126 builds), the engine's build, the settings (`device_preference` auto/cpu/gpu, auto
+meaning models whose `preferred_device` is "gpu"; per-model `model_devices` win), and free
+graphics memory (`approx_ram_mb` as the estimate). `choose()` is pure and tested case by
+case. `gpu.load(spec, engine)` (engine_cache and the benchmark worker) calls the engine's
+`use_device()` before `load()`; if loading on the card raises, it loads on the CPU and
+`record_fallback` keeps why (shown as the model's note until a settings or build change
+clears it). The engines also fall back when the card fails on the first page or runs out of
+memory on any page. Changing the device settings evicts loaded engines. Never run a real
+model on the GPU in tests: they fake engines, nvidia-smi and uv (`tests/backend/test_gpu.py`).
 
 Releases: `.github/workflows/release.yml` on `v*` tags. Its `check` job refuses a tag on a
 commit that isn't on `main` or a version that doesn't match `tauri.conf.json`, `Cargo.toml`
@@ -504,7 +535,8 @@ its own transitions, since it sets `translate` and `transition`. See `website/RE
 - No byte-level download progress from paddlex's downloader — progress is coarse/staged
   (detection model downloading → recognition model downloading → ready), read off
   paddlex's internal `official_models[name]` API.
-- oneDNN (`enable_mkldnn=True`) must stay on: without it paddle's CPU convolutions take
+- oneDNN (`enable_mkldnn=True` on the CPU; off on the graphics card) must stay on: without
+  it paddle's CPU convolutions take
   about 5 GB per megapixel and tall images got the backend OOM-killed (issue #23).
   paddlepaddle 3.3 breaks oneDNN (`ConvertPirAttribute2RuntimeAttribute not support`), hence
   `paddlepaddle<3.3` in `pyproject.toml`; check oneDNN works before raising that pin.
