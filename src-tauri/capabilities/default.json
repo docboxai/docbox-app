@@ -22,6 +22,9 @@
           "url": "https://ollama.com/download"
         },
         {
+          "url": "https://github.com/PaddlePaddle/PaddleOCR/blob/main/docs/version3.x/module_usage/text_detection.en.md"
+        },
+        {
           "url": "https://github.com/UB-Mannheim/tesseract/wiki"
         },
         {

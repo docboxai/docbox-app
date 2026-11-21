@@ -93,6 +93,16 @@ def set_cloud_enabled(enabled: bool) -> None:
     _update(cloud_enabled=enabled)
 
 
+def get_ram_limit_gb() -> float | None:
+    """The most memory the user lets a model take while reading; None: no limit."""
+    value = _read().get("ram_limit_gb")
+    return float(value) if value else None
+
+
+def set_ram_limit_gb(limit_gb: float | None) -> None:
+    _update(ram_limit_gb=limit_gb or None)
+
+
 def get_output_dir() -> Path:
     custom = _read().get("output_dir")
     if custom:

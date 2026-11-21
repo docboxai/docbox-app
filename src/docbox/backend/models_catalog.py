@@ -13,10 +13,25 @@ hardware-fit check has something real to differentiate on:
   Cyrillic, Arabic, Devanagari, Korean) verified against paddlex's official model
   catalog (`paddlex/inference/utils/official_models.py::ALL_MODELS`) rather than guessed.
 
-Download/RAM/disk figures are estimates for hardware-fit purposes, not measured exactly
-for every entry — PaddleOCR mobile-tier figures were confirmed against a real download in
-this environment; the heavier entries (PaddleOCR-VL, EasyOCR, "server"-tier PaddleOCR)
-are reasoned estimates based on their known model class/parameter scale.
+Figures, and where they come from:
+
+- Download sizes of the PP-OCR models are the det + rec model sizes PaddleOCR publishes
+  (`_PADDLE_FIGURES`). The CPU/GPU speedup is its published detection time on an Intel
+  Xeon Gold 6271C (8 threads) against a Tesla T4, where it publishes both.
+- `approx_ram_mb` is the most memory a read takes, which is what decides whether a
+  computer runs out. Nobody publishes it, so the PP-OCR figures are measured
+  (`ram_measured=True`): the cgroup's peak memory reading a 1920x2000 page (the largest
+  strip PaddleOcrEngine reads at once) with paddlepaddle 3.2.2 and oneDNN, on an Intel
+  i5-12400F (6 cores), along with `cpu_page_seconds`. Every model peaked higher on a
+  tall 1920x13768 screenshot read in 8 strips (paddle keeps some of each strip's memory):
+  Mobile 1.35 GB against 1.0, Balanced up to 3.06 against 1.8, Large 3.19 against 2.7, so the
+  figures are those. Mobile Chinese and the language
+  families share a measured model's text finder, which takes nearly all of the memory, and
+  are counted as it measured (their readers are 8-14 MB).
+  The rest (PaddleOCR-VL, EasyOCR, Tesseract) are still estimates.
+- `preferred_device`: "gpu" for the models a graphics card makes several times faster,
+  "cpu" for ones that read a page in about a second on a processor anyway (Mobile, whose
+  text finder takes ~57 ms on a CPU) or can't use one (Tesseract).
 """
 
 from __future__ import annotations
@@ -38,8 +53,12 @@ from docbox.backend.engines.tesseract_engine import TesseractEngine
 # recognition (+5.1%), at roughly a tenth of the CPU time for detection, so "Balanced"
 # outranks "Large". Models for one language family keep quality=None.
 
-# A PaddleOCR model's approx_download_mb is its text finder plus its reader, as their
-# folders measure once downloaded (paddlex fetches them uncompressed).
+_PADDLE_FIGURES = (
+    "https://github.com/PaddlePaddle/PaddleOCR/blob/main/docs/version3.x/module_usage/"
+    "text_detection.en.md"
+)
+# PP-OCRv5_server_det: 383.15 ms on the CPU, 89.55 ms on the GPU.
+_SERVER_DET_GPU_SPEEDUP = 4.3
 
 # --- PaddleOCR: mobile tier (small, fast, CPU-friendly) ---------------------------
 
@@ -59,8 +78,11 @@ registry.register(
         ),
         languages=["en"],
         approx_download_mb=12,
-        approx_ram_mb=800,
+        approx_ram_mb=1400,
         min_disk_mb=200,
+        cpu_page_seconds=1.3,
+        ram_measured=True,
+        figures_source=_PADDLE_FIGURES,
         engine_factory=lambda: PaddleOcrEngine(
             model_id="paddleocr-mobile-en",
             det_model_name="PP-OCRv4_mobile_det",
@@ -84,9 +106,11 @@ registry.register(
             "the English-only version."
         ),
         languages=["ch", "en"],
-        approx_download_mb=16,
-        approx_ram_mb=800,
+        approx_download_mb=15,
+        approx_ram_mb=1400,
         min_disk_mb=200,
+        ram_measured=True,
+        figures_source=_PADDLE_FIGURES,
         engine_factory=lambda: PaddleOcrEngine(
             model_id="paddleocr-mobile-ch",
             det_model_name="PP-OCRv4_mobile_det",
@@ -112,9 +136,13 @@ registry.register(
             "moderate size and still quick."
         ),
         languages=["ch", "en"],
-        approx_download_mb=135,
-        approx_ram_mb=1200,
+        approx_download_mb=133,
+        approx_ram_mb=3100,
         min_disk_mb=300,
+        cpu_page_seconds=4.7,
+        preferred_device="gpu",
+        ram_measured=True,
+        figures_source=_PADDLE_FIGURES,
         engine_factory=lambda: PaddleOcrEngine(
             model_id="paddleocr-balanced",
             det_model_name="PP-OCRv6_medium_det",
@@ -140,8 +168,13 @@ registry.register(
         ),
         languages=["en"],
         approx_download_mb=92,
-        approx_ram_mb=1500,
+        approx_ram_mb=3200,
         min_disk_mb=400,
+        cpu_page_seconds=5.1,
+        preferred_device="gpu",
+        gpu_speedup=_SERVER_DET_GPU_SPEEDUP,
+        ram_measured=True,
+        figures_source=_PADDLE_FIGURES,
         engine_factory=lambda: PaddleOcrEngine(
             model_id="paddleocr-accurate-en",
             det_model_name="PP-OCRv5_server_det",
@@ -152,9 +185,10 @@ registry.register(
 
 # --- PaddleOCR: language-family recognizers (PP-OCRv5 server det + family rec) ----
 
+# (id, label, reader, languages, download MB: the 84 MB text finder plus the reader)
 _LANGUAGE_FAMILIES = [
     ("paddleocr-latin", "Latin-script European", "latin_PP-OCRv5_mobile_rec",
-     ["fr", "de", "es", "it", "pt", "nl"], 92),
+     ["fr", "de", "es", "it", "pt", "nl"], 98),
     ("paddleocr-cyrillic", "Cyrillic", "cyrillic_PP-OCRv5_mobile_rec", ["ru", "uk", "bg"], 92),
     ("paddleocr-arabic", "Arabic", "arabic_PP-OCRv5_mobile_rec", ["ar"], 92),
     ("paddleocr-devanagari", "Devanagari", "devanagari_PP-OCRv5_mobile_rec", ["hi", "mr"], 92),
@@ -175,8 +209,12 @@ for _model_id, _family_label, _rec_name, _langs, _download_mb in _LANGUAGE_FAMIL
             ),
             languages=_langs,
             approx_download_mb=_download_mb,
-            approx_ram_mb=1500,
+            approx_ram_mb=3200,
             min_disk_mb=400,
+            ram_measured=True,
+            preferred_device="gpu",
+            gpu_speedup=_SERVER_DET_GPU_SPEEDUP,
+            figures_source=_PADDLE_FIGURES,
             engine_factory=lambda det="PP-OCRv5_server_det", rec=_rec_name, mid=_model_id: (
                 PaddleOcrEngine(model_id=mid, det_model_name=det, rec_model_name=rec)
             ),
@@ -202,6 +240,7 @@ registry.register(
         approx_download_mb=1970,
         approx_ram_mb=6000,
         min_disk_mb=4000,
+        preferred_device="gpu",
         engine_factory=lambda: PaddleOcrVlEngine(model_id="paddleocr-vl"),
         slow_on_cpu=True,
     )
@@ -253,6 +292,7 @@ registry.register(
         approx_download_mb=100,
         approx_ram_mb=1500,
         min_disk_mb=2500,
+        preferred_device="gpu",
         engine_factory=lambda: EasyOcrEngine(model_id="easyocr-en", langs=["en"]),
     )
 )

@@ -20,6 +20,8 @@ class DeviceCapabilities(BaseModel):
     disk_total_gb: float
     # The main graphics card, for display; DocBox's own engines run on the CPU either way.
     gpu_name: str | None = None
+    # An NVIDIA card's memory, from nvidia-smi; None for other cards or no driver.
+    gpu_memory_gb: float | None = None
     os_name: str
     arch: str
 
@@ -32,6 +34,21 @@ class FitResult(BaseModel):
     notes: list[str] = []
     # One short phrase for tables and chips: "Runs well", "Needs 8 GB free RAM", ...
     summary: str = "Runs well"
+
+
+Device = Literal["cpu", "gpu"]
+
+
+class InferenceDevice(BaseModel):
+    # Where this model reads on this computer.
+    runs_on: Device
+    # Where it reads best: "gpu" for models a graphics card makes several times faster,
+    # "cpu" for ones that are already quick on the processor.
+    preferred: Device
+    # How many times faster it reads on a graphics card, from the model's published timings.
+    gpu_speedup: float | None = None
+    # One sentence on what would make it faster here, or None when it's already at its best.
+    note: str | None = None
 
 
 # What one click on a model will do:
@@ -65,8 +82,16 @@ class ModelInfo(BaseModel):
     description: str
     languages: list[str]
     approx_download_mb: int
+    # The most memory it takes while reading a page.
     approx_ram_mb: int
+    # True when approx_ram_mb and cpu_page_seconds were measured, not estimated.
+    ram_measured: bool = False
+    # Seconds to read a full page on the processor, measured (models_catalog.py says where).
+    cpu_page_seconds: float | None = None
+    # Where the published figures (sizes, speeds) come from.
+    figures_source: str | None = None
     min_disk_mb: int
+    device: InferenceDevice
     downloaded: bool
     engine_installed: bool
     status: ModelStatus
@@ -150,12 +175,16 @@ class Settings(BaseModel):
     default_model_id: str | None
     cloud_enabled: bool
     output_dir: str
+    # The most memory a model may take while reading; None: no limit beyond what's free.
+    ram_limit_gb: float | None = None
 
 
 class SettingsUpdate(BaseModel):
     # Fields left out are unchanged; default_model_id="" clears the default.
     default_model_id: str | None = None
     cloud_enabled: bool | None = None
+    # 0 removes the limit.
+    ram_limit_gb: float | None = None
 
 
 OutputFormat = Literal["txt", "md", "pdf", "json"]

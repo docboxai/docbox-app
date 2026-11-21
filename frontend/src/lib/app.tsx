@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { api, type DeviceCapabilities, type Settings } from "./api";
+import { api, type DeviceCapabilities, type Settings, type SettingsUpdate } from "./api";
 
 export type ViewId = "setup" | "models" | "ocr" | "bench" | "platforms" | "device";
 
@@ -9,7 +9,7 @@ interface AppState {
   caps: DeviceCapabilities | null;
   refreshCaps: () => Promise<void>;
   settings: Settings | null;
-  updateSettings: (patch: { default_model_id?: string; cloud_enabled?: boolean }) => Promise<void>;
+  updateSettings: (patch: SettingsUpdate) => Promise<void>;
   settingsError: string | null;
   // Bumped whenever something app-wide changes (a setting, a finished read), so views
   // that show derived numbers can refetch.
@@ -40,7 +40,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [refreshCaps]);
 
   const updateSettings = useCallback(
-    async (patch: { default_model_id?: string; cloud_enabled?: boolean }) => {
+    async (patch: SettingsUpdate) => {
       setSettingsError(null);
       try {
         setSettings(await api.updateSettings(patch));

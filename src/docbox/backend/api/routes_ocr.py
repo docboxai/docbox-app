@@ -4,7 +4,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from docbox.backend.core import engine_cache
 from docbox.backend.core.pages import PageError, load_page
-from docbox.backend.core.reader import NotRunnable, check_runnable
+from docbox.backend.core.reader import NotRunnable, check_memory, check_runnable
 from docbox.backend.engines.remote_engine import EngineServiceError
 from docbox.backend.schemas import OcrResult
 
@@ -23,6 +23,7 @@ def run_ocr(
 ) -> OcrResult:
     try:
         spec = check_runnable(model_id)
+        check_memory(spec)
     except NotRunnable as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from None
 

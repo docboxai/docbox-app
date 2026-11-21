@@ -1,7 +1,8 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 // Web pages the app links to. The opener capability (src-tauri/capabilities/default.json)
-// allows exactly these, plus the benchmark score sources in benchmark/ocrbench.json; add
+// allows exactly these, plus the benchmark score sources in benchmark/ocrbench.json and the
+// models' `figures_source` pages (models_catalog.py); add
 // new ones in both places (tests/backend/test_external_links.py checks they agree).
 export const RELEASES_PAGE = "https://github.com/docboxai/docbox-app/releases/latest";
 export const NVIDIA_KEYS_PAGE = "https://build.nvidia.com/";
