@@ -1,3 +1,5 @@
+pub mod bench_chart;
+pub mod bench_run;
 pub mod benchmarks;
 pub mod connections;
 pub mod device;
