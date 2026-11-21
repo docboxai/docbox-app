@@ -3,7 +3,7 @@
 Browsers attach Origin to every cross-site POST but can't add a custom header without a
 CORS preflight, which the backend fails for any origin it doesn't allow. So `main.py`
 refuses unsafe requests that come from another website (an Origin that isn't the
-backend's own) unless they carry this header. The frontend (`frontend/src/lib/api.ts`)
+backend's own) unless they carry this header. The desktop app (`desktop/src/api.rs`)
 and `RemoteEngine` send it.
 """
 

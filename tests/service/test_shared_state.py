@@ -36,12 +36,15 @@ def test_desktop_app_folder_is_shared_when_it_exists(tmp_path, monkeypatch) -> N
     assert paths.get_data_dir() == app_dir
 
 
-def test_desktop_app_folder_matches_tauri_identifier() -> None:
-    import json
+def test_desktop_app_folder_matches_the_desktop_apps_identifier() -> None:
+    import re
+    import tomllib
 
-    conf = json.loads((ROOT / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
-    assert paths.APP_IDENTIFIER == conf["identifier"]
-    assert paths.desktop_app_data_dir().name == conf["identifier"]
+    packager = tomllib.loads((ROOT / "desktop" / "Packager.toml").read_text(encoding="utf-8"))
+    backend_rs = (ROOT / "desktop" / "src" / "backend.rs").read_text(encoding="utf-8")
+    (rust_id,) = re.findall(r'pub const APP_IDENTIFIER: &str = "([^"]+)";', backend_rs)
+    assert paths.APP_IDENTIFIER == packager["identifier"] == rust_id
+    assert paths.desktop_app_data_dir().name == rust_id
 
 
 # --- locks between processes --------------------------------------------------------

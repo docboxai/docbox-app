@@ -3,8 +3,7 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
-frontend/
-src-tauri/
+desktop/
 tests/
 .git/
 .claude/

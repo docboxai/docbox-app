@@ -37,19 +37,13 @@ from docbox.backend.schemas import HealthStatus
 if TYPE_CHECKING:
     import uvicorn
 
-# Tauri 2's webview origin: tauri://localhost on Linux/macOS, http://tauri.localhost on
-# Windows. Plus the Vite dev server for `npm run dev`.
-_APP_ORIGINS = [
-    "tauri://localhost",
-    "http://tauri.localhost",
-    "https://tauri.localhost",
-    "http://localhost:1420",
-    "http://127.0.0.1:1420",
-]
+# No browser origin by default: the desktop app is a native program and sends no Origin.
+# DOCBOX_CORS_ORIGINS adds some (a client served elsewhere that talks to the Docker backend).
+_APP_ORIGINS: list[str] = []
 
 
-# The Host header every legitimate caller sends: the webview and the Vite proxy both
-# address the backend as 127.0.0.1:<port>.
+# The Host header every legitimate caller sends: the desktop app, the CLI's remote engine
+# and Docker all address the backend as 127.0.0.1:<port> or localhost.
 _APP_HOSTS = ["127.0.0.1", "localhost"]
 
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}

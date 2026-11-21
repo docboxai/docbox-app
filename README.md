@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src-tauri/icons/128x128@2x.png" width="128" height="128" alt="DocBox logo: a white document box on a purple tile">
+  <img src="desktop/icons/128x128@2x.png" width="128" height="128" alt="DocBox logo: a white document box on a purple tile">
 </p>
 
 <h1 align="center">DocBox</h1>
@@ -233,13 +233,13 @@ of files you read is kept on this computer (Recent files) until you remove it th
 <details>
 <summary><b>How it's put together</b></summary>
 
-- **Desktop shell:** [Tauri 2](https://tauri.app/) (Rust) hosting a React + TypeScript +
-  Tailwind UI (`frontend/`).
+- **Desktop app:** native Rust, drawn on the GPU with [GPUI](https://www.gpui.rs/) and
+  [gpui-kit](https://gpui-kit.com/)'s components (`desktop/`).
 - **Backend:** a local [FastAPI](https://fastapi.tiangolo.com/) server
-  (`src/docbox/backend/`) that the shell starts on launch and stops on exit; the UI talks
+  (`src/docbox/backend/`) that the app starts on launch and stops on exit; the app talks
   to it over `http://127.0.0.1:<port>`.
 - **Python runtime (installed app):** the installer bundles the backend source, its
-  `uv.lock` and [uv](https://docs.astral.sh/uv/) as a sidecar. On first launch the shell
+  `uv.lock` and [uv](https://docs.astral.sh/uv/). On first launch the app
   runs `uv sync` against the bundled lockfile into the per-user data folder, downloading a
   managed CPython, so every machine gets the exact pinned versions. When an update ships a
   new lockfile, the environment is re-synced, with any engines the user had installed.
@@ -251,30 +251,27 @@ of files you read is kept on this computer (Recent files) until you remove it th
 
 </details>
 
-**Requirements:** [uv](https://docs.astral.sh/uv/), [Node.js](https://nodejs.org/) 20+,
-[Rust](https://www.rust-lang.org/tools/install) with
-`cargo install tauri-cli --version "^2" --locked`, and on Linux
-[Tauri's system packages](https://tauri.app/start/prerequisites/).
+**Requirements:** [uv](https://docs.astral.sh/uv/) and
+[Rust](https://www.rust-lang.org/tools/install); on Linux also the Vulkan, Wayland,
+xkbcommon and fontconfig development packages (Ubuntu: `libvulkan-dev libwayland-dev
+libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libfontconfig-dev libfreetype-dev`).
 
 ```sh
-uv sync --extra paddle           # base + PaddleOCR (--all-extras adds EasyOCR/PyTorch)
-npm --prefix frontend install
-cargo tauri dev                  # from the repository root
+uv sync --extra paddle                            # base + PaddleOCR (--extra easyocr adds EasyOCR)
+cargo run --manifest-path desktop/Cargo.toml      # the first build takes a while
 ```
 
 A plain `uv sync` removes extras you didn't pass, so always pass the ones you want.
 
 - Backend only: `uv run python -m docbox.backend.main --port 8756`, then
   `http://127.0.0.1:8756/docs`.
-- Frontend only: `npm --prefix frontend run dev`. In a plain browser the app calls `/api` on
-  its own origin and Vite proxies it to `http://127.0.0.1:8756` (set `DOCBOX_BACKEND_URL`
-  to point elsewhere), so it also works behind a reverse proxy or from another device.
-- Tests and lint: `uv run pytest`, `uv run ruff check src/docbox tests`.
-- Local installer: `cargo tauri build` from the repository root. `build.rs` copies your
-  own `uv` in as the sidecar when `src-tauri/binaries/` is empty.
+- Tests and lint: `uv run pytest`, `uv run ruff check src/docbox tests`,
+  `cargo test --manifest-path desktop/Cargo.toml`.
+- Local installer: `scripts/desktop_uv_sidecar.sh`, then `cargo packager --release` in
+  `desktop/` (`cargo install cargo-packager --locked` once). Installers land in
+  `desktop/target/release/packages/`.
 
-The logo's source is `src-tauri/icons/logo.svg`; regenerate the icon set with
-`cargo tauri icon src-tauri/icons/logo.svg`.
+The logo's source is `desktop/icons/logo.svg`.
 
 ## Command line
 
@@ -337,20 +334,22 @@ engine off).
 ## Releasing
 
 `.github/workflows/release.yml` builds Windows (`.exe`, `.msi`), macOS on Apple Silicon
-(`.dmg`, ad-hoc signed, not notarized) and Linux (`.AppImage`, `.deb`, `.rpm`) installers,
+(`.dmg`, ad-hoc signed, not notarized) and Linux (`.AppImage`, `.deb`) installers with
+[cargo-packager](https://github.com/crabnebula-dev/cargo-packager),
 names them `DocBox-<version>-<os>-<arch>` and creates a **draft** GitHub Release with
 GitHub's list of changes. Releases come only from `main`: the workflow refuses a tag on any
 commit that isn't on `main`.
 
 Each installer is signed for the in-app updater with the `TAURI_SIGNING_PRIVATE_KEY` and
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets, and the release carries a
-`latest.json` naming the file and signature for each kind of install (plus the macOS
-`.app.tar.gz` the updater installs). Every installed copy, back to 0.1.0, checks
-`releases/latest/download/latest.json` and accepts only updates signed with that key
-(`plugins.updater.pubkey` in `tauri.conf.json`), so keep both secrets: losing the key means
-existing installs can't update in-app any more.
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` repository secrets (named for the first desktop shell;
+the key is the same), and the release carries two manifests naming the file and signature
+for each kind of install (plus the macOS `.app.tar.gz` the updater installs):
+`updates.json` for the current app and `latest.json` for copies from before it (0.1.x).
+Every installed copy, back to 0.1.0, accepts only updates signed with that key
+(`PUBKEY` in `desktop/src/update.rs`), so keep both secrets: losing the key means existing
+installs can't update in-app any more.
 
-To release: bump the version in `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and
+To release: bump the version in `desktop/Packager.toml`, `desktop/Cargo.toml` and
 `pyproject.toml` on `main` (the workflow refuses a mismatch), then tag that commit and push
 the tag: `git tag -a v0.2.0 -m "DocBox 0.2.0" && git push origin v0.2.0`. Edit the list of
 changes in the draft release, then publish it; installed copies offer the update from then
@@ -358,7 +357,7 @@ on.
 
 ## Running the backend in Docker
 
-The desktop shell doesn't containerize, but the backend runs headless:
+The desktop app doesn't containerize, but the backend runs headless:
 
 ```sh
 docker compose up --build
@@ -374,8 +373,7 @@ container, start it on the host with `OLLAMA_HOST=0.0.0.0 ollama serve`.
 
 ```
 src/docbox/backend/   FastAPI app: routes, registry, engines, runtime + prerequisite managers
-src-tauri/            Rust shell: first-run setup, backend lifecycle
-frontend/             React + TypeScript + Tailwind UI (Vite)
+desktop/              the desktop app (Rust, GPUI): first-run setup, backend lifecycle, every view
 website/              the landing page (Next.js, deployed on Vercel)
 tests/backend/        pytest suite
 docs/screenshots/     README screenshots

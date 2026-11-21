@@ -1,7 +1,6 @@
-# Runs the DocBox backend (FastAPI + OCR engines) headless, without the Tauri desktop
-# shell — the shell is a native GUI window (WebView2/webkit2gtk) and doesn't containerize.
-# Point a client at this container's /api/* instead of a locally-spawned backend by
-# setting the frontend's API base URL, or call the endpoints directly (see /docs).
+# Runs the DocBox backend (FastAPI + OCR engines) headless, without the desktop app, which
+# is a native GUI window and doesn't containerize. Call the endpoints directly (see /docs)
+# or point another client at this container's /api/*.
 FROM python:3.12-slim
 
 # tesseract-ocr: the Tesseract engine's actual binary. DocBox's own code deliberately

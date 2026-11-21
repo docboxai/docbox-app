@@ -23,8 +23,8 @@ _APP_AUTHOR = "docbox"
 MACOS_BIN_DIRS = (Path("/opt/homebrew/bin"), Path("/usr/local/bin"))
 
 
-# The desktop app's bundle identifier (tauri.conf.json); Tauri names its per-user data
-# folder after it and passes that folder to the backend as DOCBOX_DATA_DIR.
+# The desktop app's identifier (desktop/Packager.toml, desktop/src/backend.rs): it names its
+# per-user data folder after it and passes that folder to the backend as DOCBOX_DATA_DIR.
 APP_IDENTIFIER = "io.github.docboxai.docbox"
 
 

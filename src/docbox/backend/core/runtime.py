@@ -7,7 +7,7 @@ bundled `uv.lock` — same pinned versions on every machine, no pip, no PyPI res
 at runtime. Removal re-syncs without that extra, which uninstalls its packages.
 
 Three modes:
-- "managed" (installed app, `DOCBOX_RUNTIME_MODE=managed` from the Tauri shell): env
+- "managed" (installed app, `DOCBOX_RUNTIME_MODE=managed` from the desktop app): env
   lives in the app's data dir and the project itself isn't installed (its source is on
   PYTHONPATH), so syncs pass `--no-dev --no-install-project`.
 - "tool" (a standalone `docbox` from `uv tool install` / pip): there's no project or lock
@@ -16,7 +16,7 @@ Three modes:
 - "dev" (anything else: a checkout, Docker): the repo's own `.venv`; syncs keep the dev
   group and the editable project.
 
-`state.json` (in the runtime dir) records the installed extras so the Tauri shell can
+`state.json` (in the runtime dir) records the installed extras so the desktop app can
 re-sync them after an app update ships a new `uv.lock`, and carries removals that had
 to wait for a restart because the engine's native libraries were already loaded.
 
@@ -249,7 +249,7 @@ def read_state() -> dict:
 
 
 def _write_state(**updates) -> None:
-    # state.json describes the installed app's managed env, which the Tauri shell re-syncs
+    # state.json describes the installed app's managed env, which the desktop app re-syncs
     # from it. A CLI, MCP server or dev backend shares the data dir but runs its own Python,
     # so its extras must never be written there.
     if not _managed():
