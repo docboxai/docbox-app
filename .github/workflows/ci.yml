@@ -77,3 +77,32 @@ jobs:
       # tauri-build checks that frontendDist exists.
       - run: mkdir -p frontend/dist
       - run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  desktop:
+    # The GPUI desktop app (desktop/): builds on every platform and runs its tests, among
+    # them the contract test against the real backend (Linux and macOS; it needs the
+    # repository's .venv, hence the uv sync).
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: GPUI system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libfontconfig-dev libfreetype-dev \
+            libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev libx11-xcb-dev libxcb1-dev \
+            libvulkan-dev libasound2-dev libzstd-dev
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop
+      - run: cargo test --locked --manifest-path desktop/Cargo.toml
